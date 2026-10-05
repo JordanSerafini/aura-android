@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="aura_shortcut_talk">Parler</string>
+  <string name="aura_shortcut_talk_long">Conversation vocale avec Aura</string>
+  <string name="aura_tile_dictate">Dicter à Aura</string>
+  <string name="aura_a11y_summary">Lecture de l\'écran et pilotage des apps que tu autorises</string>
+  <string name="aura_a11y_description">Optionnel. À ta demande, Aura lit le texte affiché dans l\'appli au premier plan (« lis-moi ce message ») et l\'envoie à ton serveur. Elle peut aussi TOUCHER, ÉCRIRE et FAIRE DÉFILER dans les applis que tu as cochées dans Aura → Réglages → Contrôle d\'apps (WhatsApp seule au départ), et appuyer sur « Envoyer » dans WhatsApp pour un message que tu as accepté. Toucher et écrire demandent toujours ton accord sur le téléphone ou la montre. Jamais dans les banques, paiements, gestionnaires de mots de passe, authentificateurs, paramètres du téléphone ni Play Store, même cochés. Rien n\'est surveillé en continu, rien n\'est enregistré sur le téléphone, et un texte lu à l\'écran n\'est jamais pris pour un ordre. Désactive-le ici à tout moment.</string>
+</resources>

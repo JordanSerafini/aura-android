@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icone de raccourci (micro) sur pastille -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="48dp"
+  android:height="48dp"
+  android:viewportWidth="48"
+  android:viewportHeight="48">
+  <path android:fillColor="#FF6B8FF5" android:pathData="M24,24m-24,0a24,24 0,1 1,48 0a24,24 0,1 1,-48 0" />
+  <path android:fillColor="#FFFFFFFF"
+    android:pathData="M24,27c2.2,0 4,-1.8 4,-4v-8c0,-2.2 -1.8,-4 -4,-4s-4,1.8 -4,4v8C20,25.2 21.8,27 24,27zM31,23c0,3.9 -3.1,7 -7,7s-7,-3.1 -7,-7h-2c0,4.6 3.4,8.4 8,8.9V35h2v-3.1c4.6,-0.5 8,-4.3 8,-8.9H31z" />
+</vector>

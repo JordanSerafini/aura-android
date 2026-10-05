@@ -1,0 +1,6 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "modules": ["dev.aura.mobile.device.AuraDeviceModule"]
+  }
+}

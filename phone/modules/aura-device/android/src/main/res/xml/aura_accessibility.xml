@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AuraAccessibilityService : lecture a la demande (screen_read) ET pilotage des apps de la liste blanche de l'utilisateur
+     (ui_act, docs/PROTOCOL.md §9.2 : toucher, saisir, defiler, retour, accueil), avec sa confirmation pour toucher et
+     saisir. Aucun evenement suivi en continu (onAccessibilityEvent ne fait rien). Aucun flag ajoute pour ui_act :
+     performAction sur un noeud et performGlobalAction (retour, accueil) n'en demandent pas, donc ni
+     canPerformGestures ni filtre des touches. Jusqu'au 28/09 ce commentaire disait « pas de geste global » et le code
+     « n'agit sur aucune autre appli » : plus vrai, corrige. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+  android:description="@string/aura_a11y_description"
+  android:summary="@string/aura_a11y_summary"
+  android:accessibilityEventTypes="typeWindowStateChanged"
+  android:accessibilityFeedbackType="feedbackGeneric"
+  android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+  android:canRetrieveWindowContent="true"
+  android:notificationTimeout="500"
+  android:isAccessibilityTool="false" />

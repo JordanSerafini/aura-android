@@ -1,0 +1,24 @@
+# Build output
+build/
+.gradle/
+.kotlin/
+.idea/
+*.iml
+captures/
+*.apk
+*.aab
+dist/
+
+# Local configuration and secrets (never commit)
+local.properties
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+keys/
+google-services.json
+
+# OS / editor
+.DS_Store
+*.log

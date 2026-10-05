@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Aura assistant numerique (AuraAssistant.kt). recognitionService est exige pour etre proposable :
+     AuraRecognitionService relaie vers le reconnaisseur Google (la dictee des autres applis continue). -->
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+  android:sessionService="dev.aura.mobile.device.AuraSessionService"
+  android:recognitionService="dev.aura.mobile.device.AuraRecognitionService"
+  android:supportsAssist="true"
+  android:supportsLaunchVoiceAssistFromKeyguard="false"
+  android:supportsLocalInteraction="false" />

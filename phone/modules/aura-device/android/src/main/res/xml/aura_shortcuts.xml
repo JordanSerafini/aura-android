@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Raccourcis de l'icone (appui long) : pose sur MainActivity par plugins/withAuraAndroid.js -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+  <shortcut
+    android:shortcutId="talk"
+    android:enabled="true"
+    android:icon="@drawable/ic_aura_talk"
+    android:shortcutShortLabel="@string/aura_shortcut_talk"
+    android:shortcutLongLabel="@string/aura_shortcut_talk_long">
+    <intent
+      android:action="android.intent.action.VIEW"
+      android:data="aura://talk"
+      android:targetPackage="dev.aura.mobile"
+      android:targetClass="dev.aura.mobile.MainActivity" />
+  </shortcut>
+</shortcuts>

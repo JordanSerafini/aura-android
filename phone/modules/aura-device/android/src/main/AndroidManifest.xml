@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fusionne dans le manifeste de l'app a chaque build : survit au prebuild (android/ regenere). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
+
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <uses-permission android:name="android.permission.SEND_SMS" />
+  <uses-permission android:name="android.permission.READ_SMS" />
+  <uses-permission android:name="android.permission.CALL_PHONE" />
+  <uses-permission android:name="android.permission.READ_CALL_LOG" />
+  <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+  <uses-permission android:name="android.permission.READ_CONTACTS" />
+  <uses-permission android:name="android.permission.READ_CALENDAR" />
+  <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+  <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+  <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+  <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+  <uses-permission android:name="android.permission.VIBRATE" />
+  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+  <!-- Live Update Android 16 (LiveUpdate.kt) : permission normale, accordee a l installation -->
+  <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+  <!-- camera_snap (CameraActivity.kt) -->
+  <uses-permission android:name="android.permission.CAMERA" />
+  <!-- veille de reconnexion ecran eteint (BridgeWatchdog.kt) : verrou partiel de 25 s au plus par passage -->
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <!-- app_usage (temps d'ecran par app) : acces special « Acces a l'utilisation », accorde a la main par l'utilisateur -->
+  <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+
+  <uses-feature android:name="android.hardware.telephony" android:required="false" />
+  <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
+  <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+  <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+  <application>
+    <!-- Service de premier plan : WebSocket vers le bridge + relais montre -->
+    <service
+      android:name="dev.aura.mobile.device.AuraService"
+      android:exported="false"
+      android:foregroundServiceType="connectedDevice|location" />
+
+    <!-- Acces aux notifications (notif_list / notif_reply / message_send / media_now) -->
+    <service
+      android:name="dev.aura.mobile.device.AuraNotificationListener"
+      android:exported="true"
+      android:label="Aura"
+      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+
+    <!-- Wearable Data Layer (docs/PROTOCOL.md §3) -->
+    <service
+      android:name="dev.aura.mobile.device.AuraWearService"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+        <data android:scheme="wear" android:host="*" android:pathPrefix="/aura" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="com.google.android.gms.wearable.CHANNEL_EVENT" />
+        <data android:scheme="wear" android:host="*" android:pathPrefix="/aura" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="com.google.android.gms.wearable.CAPABILITY_CHANGED" />
+        <data android:scheme="wear" android:host="*" android:pathPrefix="/aura_watch" />
+      </intent-filter>
+    </service>
+
+    <!-- Assistant numerique par defaut (appui long sur le bouton lateral) : AuraAssistant.kt -->
+    <service
+      android:name="dev.aura.mobile.device.AuraVoiceInteractionService"
+      android:exported="true"
+      android:label="Aura"
+      android:permission="android.permission.BIND_VOICE_INTERACTION">
+      <meta-data android:name="android.voice_interaction" android:resource="@xml/aura_interaction_service" />
+      <intent-filter>
+        <action android:name="android.service.voice.VoiceInteractionService" />
+      </intent-filter>
+    </service>
+    <service
+      android:name="dev.aura.mobile.device.AuraSessionService"
+      android:exported="true"
+      android:permission="android.permission.BIND_VOICE_INTERACTION" />
+    <service
+      android:name="dev.aura.mobile.device.AuraRecognitionService"
+      android:exported="true"
+      android:label="Aura">
+      <intent-filter>
+        <action android:name="android.speech.RecognitionService" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+      <meta-data android:name="android.speech" android:resource="@xml/aura_recognition_service" />
+    </service>
+
+    <!-- « Partager vers Aura » : feuille legere par-dessus l'appli d'origine (ShareActivity.kt) -->
+    <activity
+      android:name="dev.aura.mobile.device.ShareActivity"
+      android:exported="true"
+      android:label="Aura"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar"
+      android:excludeFromRecents="true"
+      android:taskAffinity=""
+      android:windowSoftInputMode="adjustResize">
+      <intent-filter>
+        <action android:name="android.intent.action.SEND" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:mimeType="text/plain" />
+        <data android:mimeType="image/*" />
+        <data android:mimeType="application/pdf" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.SEND_MULTIPLE" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:mimeType="image/*" />
+        <data android:mimeType="application/pdf" />
+      </intent-filter>
+    </activity>
+
+    <!-- camera_snap : activite noire plein ecran, au-dessus de l'ecran verrouille, ~1 s -->
+    <activity
+      android:name="dev.aura.mobile.device.CameraActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:taskAffinity="dev.aura.mobile.camera"
+      android:noHistory="true"
+      android:showWhenLocked="true"
+      android:turnScreenOn="true"
+      android:screenOrientation="portrait"
+      android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
+    <!-- screen_read + envoi WhatsApp confirme + ui_act (apps de la liste blanche) : OPTIONNEL, desactive tant que l'utilisateur ne l'active pas -->
+    <service
+      android:name="dev.aura.mobile.device.AuraAccessibilityService"
+      android:exported="true"
+      android:label="Aura : lecture et contrôle d'apps"
+      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+      </intent-filter>
+      <meta-data android:name="android.accessibilityservice" android:resource="@xml/aura_accessibility" />
+    </service>
+
+    <!-- Tuile Réglages rapides « Dicter à Aura » (DictateTile.kt) : ouvre la conversation vocale mains libres -->
+    <service
+      android:name="dev.aura.mobile.device.DictateTileService"
+      android:exported="true"
+      android:icon="@drawable/ic_tile_dictate"
+      android:label="@string/aura_tile_dictate"
+      android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+      <intent-filter>
+        <action android:name="android.service.quicksettings.action.QS_TILE" />
+      </intent-filter>
+    </service>
+
+    <!-- « Rappeler » d'un appel manque : ouvre le composeur (MissedCalls.kt), sans vue -->
+    <activity
+      android:name="dev.aura.mobile.device.RedialActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:noHistory="true"
+      android:taskAffinity=""
+      android:theme="@android:style/Theme.NoDisplay" />
+
+    <!-- Confirmation native des temps a saisir (TimeProposals.kt) : liste + minutes, rien ne part avant « Valider » -->
+    <activity
+      android:name="dev.aura.mobile.device.TimeConfirmActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:taskAffinity=""
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+    <!-- Veille de reconnexion (BridgeWatchdog.kt) : alarme inexacte setAndAllowWhileIdle, interne a l'app -->
+    <receiver
+      android:name="dev.aura.mobile.device.WatchdogReceiver"
+      android:exported="false" />
+
+    <receiver
+      android:name="dev.aura.mobile.device.BootReceiver"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+
+    <!-- Boutons des notifications (Accepter/Refuser, arreter la sonnerie) : internes a l'app -->
+    <receiver
+      android:name="dev.aura.mobile.device.ActionReceiver"
+      android:exported="false" />
+  </application>
+</manifest>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">Aura</string>
+  <string name="tile_label">Aura</string>
+  <string name="tile_description">Parler à Aura et voir la dernière réponse</string>
+  <string name="complication_label">Aura</string>
+  <string name="confirm_label">Confirmation Aura</string>
+</resources>

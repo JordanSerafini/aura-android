@@ -1,0 +1,25 @@
+# dependances et caches
+node_modules/
+.expo/
+dist/
+*.log
+
+# android/ est regenere par `expo prebuild --clean` (scripts/build.sh) : tout ce qui doit
+# survivre vit dans app.config.ts, plugins/ et modules/aura-device
+/android/
+modules/aura-device/android/build/
+ios/
+
+# sorties de build du module local
+modules/aura-device/android/.gradle/
+modules/aura-device/android/.cxx/
+
+# secrets (jamais dans git) : jeton appareil et mot de passe du keystore restent dans l'environnement
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.apk
+*.aab
+gradle.properties.local
