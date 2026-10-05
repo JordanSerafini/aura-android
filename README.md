@@ -104,8 +104,8 @@ cp local.properties.example local.properties    # then edit sdk.dir
 What was run on the sanitized snapshot, on a Linux machine with JDK 21 and Android SDK 36:
 
 - Watch app: `./gradlew testDebugUnitTest` ran offline and passed (73 unit tests, 0 failures).
-- Phone app: `tsc --noEmit` passed and `expo prebuild` generated the Android project. The Kotlin unit tests of `aura-device` were not run to completion: the Gradle daemon was killed on the first attempts in this environment, so the native module is not confirmed to compile here.
-- The `assembleDebug` command for the phone app above, the release builds, installation on a device, and runtime behaviour against a server were not run on the snapshot.
+- Phone app: `tsc --noEmit` passed, `expo prebuild` generated the Android project, and `./gradlew :aura-device:testReleaseUnitTest` passed (260 unit tests in 18 classes, 0 failures, 0 skipped). That confirms the native Kotlin module compiles and its logic tests pass after the package rename. The first attempts at this were killed by the environment (the Gradle process disappeared) and succeeded when run as a separate service.
+- The `assembleDebug` command for the phone app above, the signed release builds, installation on a device, and runtime behaviour against a server were not run on the snapshot.
 
 ## Limits
 
