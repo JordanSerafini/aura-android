@@ -1,5 +1,5 @@
-import type { ReactNode } from "react"
-import { Pressable, StyleSheet, Switch, Text, View, type SwitchProps } from "react-native"
+import { useEffect, useState, type ReactNode } from "react"
+import { Dimensions, Keyboard, Pressable, StyleSheet, Switch, Text, View, type SwitchProps } from "react-native"
 import { theme } from "./config"
 
 export function Card({ title, children, right }: { title?: string, children: ReactNode, right?: ReactNode }) {
@@ -59,6 +59,21 @@ export function Choice({ label, selected, onPress, a11y }: { label: string, sele
 // Interrupteur : zone tactile etendue a 48 dp (le dessin natif fait ~32 dp de haut)
 export function Toggle(props: SwitchProps) {
   return <Switch trackColor={{ true: theme.accent, false: theme.border }} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }} {...props} />
+}
+
+// Hauteur du clavier, a ajouter en bas d'un ScrollView qui porte un champ de saisie : depuis Android 15 (edge-to-edge) la
+// fenetre ne retrecit plus, sans cette marge le dernier champ ne se defile pas au-dessus du clavier. Meme mesure que AuraScreen
+// (depuis le HAUT du clavier : endCoordinates.height omet la barre de navigation).
+export function useKeyboardInset(): number {
+  const [kb, setKb] = useState(0)
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (e) => {
+      setKb(Math.max(e.endCoordinates.height, Dimensions.get("screen").height - e.endCoordinates.screenY))
+    })
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0))
+    return () => { show.remove(); hide.remove() }
+  }, [])
+  return kb
 }
 
 export function Dot({ ok, warn }: { ok: boolean, warn?: boolean }) {

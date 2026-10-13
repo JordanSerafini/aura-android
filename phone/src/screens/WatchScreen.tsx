@@ -3,7 +3,7 @@ import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-nativ
 import { SafeAreaView } from "react-native-safe-area-context"
 import { theme } from "../config"
 import { AuraDevice, pingWatch, relTime, useAuraState } from "../native"
-import { Button, Card, Dot, Row, s } from "../ui"
+import { Button, Card, Dot, Row, s, useKeyboardInset } from "../ui"
 
 type VoiceMode = "auto" | "voice" | "text"
 type WatchSettings = { voice_mode: VoiceMode, work_hours: { days: number[], start: string, end: string } }
@@ -25,6 +25,7 @@ function load(): WatchSettings {
 
 export default function WatchScreen() {
   const state = useAuraState()
+  const kb = useKeyboardInset()
   const [settings, setSettings] = useState<WatchSettings>(load)
   const [start, setStart] = useState(settings.work_hours.start)
   const [end, setEnd] = useState(settings.work_hours.end)
@@ -56,7 +57,7 @@ export default function WatchScreen() {
 
   return (
     <SafeAreaView style={s.screen} edges={["top"]}>
-      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[s.scroll, kb > 0 && { paddingBottom: s.scroll.paddingBottom + kb }]} keyboardShouldPersistTaps="handled">
         <Card title="Montre">
           <Row>
             <Dot ok={w.connected} />

@@ -9,7 +9,7 @@ import { APP_VERSION, BRIDGE_URL, DEVICE_TOKEN, OUTGOING, theme } from "../confi
 import { BRIDGE_LABELS } from "../labels"
 import type { Section, SettingsParams } from "../nav"
 import { AuraDevice, countUsage, useAuraState } from "../native"
-import { Button, Card, Dot, Row, Toggle, s } from "../ui"
+import { Button, Card, Dot, Row, Toggle, s, useKeyboardInset } from "../ui"
 
 // resultat de setZoneHere : JSON texte {ok, error?, message?}
 function zoneResult(raw: string): { ok: boolean, message?: string } {
@@ -23,6 +23,7 @@ function zoneResult(raw: string): { ok: boolean, message?: string } {
 
 export default function SettingsScreen() {
   const st = useAuraState()
+  const kb = useKeyboardInset()
   const known = st.phoneConfirm !== null
   const confirmMap: Record<string, boolean> = st.phoneConfirm ?? {}
   const [zoneBusy, setZoneBusy] = useState<string | null>(null)
@@ -55,6 +56,15 @@ export default function SettingsScreen() {
     AuraDevice.sendBridgeSettings(JSON.stringify({ phone_confirm: next }))
   }
 
+  // couper une confirmation = Aura agira sans demander : un appui par erreur ne doit pas suffire (remettre « Avec confirmation » reste immédiat)
+  const askConfirm = (o: { action: string, label: string }, value: boolean) => {
+    if (value) { setConfirm(o.action, true); return }
+    Alert.alert("Agir sans ton accord ?", `Aura pourra « ${o.label} » sans te demander. Ce qui part ne se rappelle pas.`, [
+      { text: "Annuler", style: "cancel" },
+      { text: "Désactiver", style: "destructive", onPress: () => setConfirm(o.action, false) },
+    ])
+  }
+
   const toggleService = () => {
     if (st.service) {
       AuraDevice.setPref("service_off", "1")
@@ -78,7 +88,7 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={s.screen} edges={["top"]}>
-      <ScrollView ref={scroll} contentContainerStyle={s.scroll}>
+      <ScrollView ref={scroll} contentContainerStyle={[s.scroll, kb > 0 && { paddingBottom: s.scroll.paddingBottom + kb }]} keyboardShouldPersistTaps="handled">
         <View {...mark("pause")}><PauseCard /></View>
 
         <View {...mark("ui_control")}><UiControlCard /></View>
@@ -121,7 +131,7 @@ export default function SettingsScreen() {
                 </View>
                 <Toggle
                   value={on}
-                  onValueChange={(v) => setConfirm(o.action, v)}
+                  onValueChange={(v) => askConfirm(o, v)}
                   disabled={st.bridge !== "online"}
                   accessibilityLabel={`Demander mon accord : ${o.label}`}
                 />

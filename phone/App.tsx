@@ -143,7 +143,7 @@ export default function App() {
             tabBarHideOnKeyboard: true,
             tabBarIcon: ({ color, size }) => <Ionicons name={ICONS[route.name]} color={color} size={size} />,
             tabBarBadge: route.name === "Actions" && confirms.length ? confirms.length : undefined,
-            tabBarLabelStyle: { fontSize: 11 },
+            tabBarLabelStyle: { fontSize: 12 },
             lazy: true,
           })}
         >

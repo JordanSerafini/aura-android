@@ -31,6 +31,7 @@ export default function PhoneHomeScreen({ go }: { go: Go }) {
             <Dot ok={st.bridge === "online"} warn={st.bridge === "connecting"} />
             <View style={{ flex: 1 }} accessible accessibilityLabel={`${conn.title}. ${conn.help}`}>
               <Text style={[s.text, { fontWeight: "700", color: conn.color }]}>{conn.title}</Text>
+              {st.bridge !== "online" && conn.help ? <Text style={s.dim}>{conn.help}</Text> : null}
             </View>
           </Row>
           <Row>

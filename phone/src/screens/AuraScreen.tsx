@@ -2,6 +2,7 @@ import { useFocusEffect } from "@react-navigation/native"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ActivityIndicator, BackHandler, Dimensions, Keyboard, Linking, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { setStatusBarStyle } from "expo-status-bar"
 import { WebView, type WebViewMessageEvent } from "react-native-webview"
 import type { ShouldStartLoadRequest } from "react-native-webview/lib/WebViewTypes"
 import { DEVICE_TOKEN, POSTE, PWA_ORIGIN, PWA_URL, theme } from "../config"
@@ -9,6 +10,15 @@ import { AuraDevice } from "../native"
 import { Button } from "../ui"
 
 const PAIRED_KEY = "pwa_paired"
+
+// « rgb(r, g, b) » ou « rgba(r, g, b, a) » -> { hex, light } ; null si la couleur est transparente ou illisible
+export function parseWebBg(css: unknown): { hex: string, light: boolean } | null {
+  const m = typeof css === "string" ? /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(css) : null
+  if (!m || (m[4] !== undefined && Number(m[4]) < 1)) return null
+  const [r, g, b] = [m[1], m[2], m[3]].map((x) => Math.min(255, Number(x)))
+  const hex = "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("")
+  return { hex, light: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.5 }
+}
 
 // Origine et chemin d'une URL http(s), SANS `URL` : sous Hermes le polyfill de `URL` n'implemente pas tous les accesseurs
 // (`pathname`, `origin` levent « not implemented » selon la version de React Native).
@@ -110,6 +120,14 @@ const INJECT = `(() => {
     }
     b.textContent = String(n)
   }
+  // couleur de l'en-tete de la PWA (theme clair/sombre : systeme ou reglage Apparence) : l'app colore sous l'encoche et
+  // sous la barre de navigation avec, sinon une bande sombre restait au-dessus d'une PWA claire
+  const sendTheme = () => { const h = document.querySelector("header.top") || document.body; post({ type: "theme", bg: getComputedStyle(h).backgroundColor }) }
+  const watchTheme = () => {
+    sendTheme(); setTimeout(sendTheme, 400)
+    new MutationObserver(() => { sendTheme(); setTimeout(sendTheme, 400) }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] })
+    if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(sendTheme, 50))
+  }
   const mount = () => {
     document.body.appendChild(probe)
     const header = document.querySelector("header.top"); const status = document.getElementById("status")
@@ -119,7 +137,7 @@ const INJECT = `(() => {
       put(gear, { position: "fixed", top: "calc(env(safe-area-inset-top) + 4px)", right: "52px", "z-index": "99", margin: "0" }); document.body.appendChild(gear)
       put(talk, { position: "fixed", top: "calc(env(safe-area-inset-top) + 4px)", right: "100px", "z-index": "99", margin: "0" }); document.body.appendChild(talk)
     }
-    measure(); addEventListener("resize", measure)
+    measure(); addEventListener("resize", measure); watchTheme()
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount()
 })(); true`
@@ -136,6 +154,7 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
   const [url] = useState(initialUrl)
   const [error, setError] = useState<string | null>(null)
   const [key, setKey] = useState(0)
+  const [webBg, setWebBg] = useState<{ hex: string, light: boolean } | null>(null)
 
   // bouton retour Android = retour dans la WebView, tant qu'elle a un historique
   useFocusEffect(useCallback(() => {
@@ -163,6 +182,12 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
     return () => { show.remove(); hide.remove() }
   }, [])
 
+  // icones de la barre d'etat lisibles sur la couleur de la PWA ; les autres onglets (sombres) retrouvent « light » en la quittant
+  useFocusEffect(useCallback(() => {
+    if (webBg) setStatusBarStyle(webBg.light ? "dark" : "light")
+    return () => setStatusBarStyle("light")
+  }, [webBg]))
+
   useEffect(() => {
     ref.current?.injectJavaScript(`window.__auraBadge && window.__auraBadge(${badge}); true`)
   }, [badge])
@@ -183,6 +208,7 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
       if (m.type === "open_phone") onOpenPhone()
       else if (m.type === "open_settings") onOpenSettings()
       else if (m.type === "open_talk") onOpenTalk?.()
+      else if (m.type === "theme") setWebBg(parseWebBg(m.bg))
       else if (m.type === "insets") setWebBottom(Number(m.bottom) || 0)
       else if (m.type === "sent" && typeof m.id === "string") AuraDevice.trackRequest(m.id)
     } catch { /* message d'une autre origine : ignore */ }
@@ -201,7 +227,7 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
   }, [])
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: bottomPad }]}>
+    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: bottomPad }, webBg && !error && { backgroundColor: webBg.hex }]}>
       {error ? (
         <View style={styles.error}>
           <Text style={styles.errorTitle}>Aura injoignable</Text>

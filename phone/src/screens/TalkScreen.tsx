@@ -135,11 +135,11 @@ export default function TalkScreen({ onClose, autoStart = false }: { onClose: ()
             <Ionicons
               name={snap.state === "speaking" ? "volume-high" : waiting ? "ellipsis-horizontal" : snap.state === "error" ? "alert" : "mic"}
               size={54}
-              color="#fff"
+              color={snap.state === "idle" || snap.state === "ended" ? "#fff" : theme.onAccent}
             />
           </Animated.View>
         </Pressable>
-        <Text style={[st.status, snap.state === "error" && { color: theme.bad }]}>{startError ?? label(snap, started)}</Text>
+        <Text accessibilityLiveRegion="polite" style={[st.status, snap.state === "error" && { color: theme.bad }]}>{startError ?? label(snap, started)}</Text>
       </View>
 
       <ScrollView ref={scroll} style={st.log} contentContainerStyle={st.logIn}
