@@ -27,6 +27,13 @@ function splitUrl(url: string): { origin: string, path: string } | null {
   return m ? { origin: m[1], path: m[2] || "/" } : null
 }
 
+// URL servie par la PWA : origine EGALE, pas un prefixe. Avec `startsWith(PWA_ORIGIN)`, https://hote.evil.tld ou
+// https://hote@evil.tld passaient pour la PWA et se chargeaient dans la WebView (ponts natifs injectes, micro accorde
+// sans invite par mediaCapturePermissionGrantType="grant").
+export function isPwaUrl(url: string): boolean {
+  return splitUrl(url)?.origin.toLowerCase() === PWA_ORIGIN.toLowerCase()
+}
+
 // Erreur HTTP de la PAGE de la PWA (pas d'une ressource : une image 404 ne doit pas masquer l'app) -> message utile.
 // Avant, un 502 du reverse proxy (bridge arrete) laissait une page blanche sans explication.
 export function httpErrorMessage(status: number, url: string): string | null {
@@ -220,7 +227,7 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
 
   const onShouldStart = useCallback((req: ShouldStartLoadRequest) => {
     const u = req.url
-    if (u.startsWith(PWA_ORIGIN) || u.startsWith("about:") || u.startsWith("data:") || u.startsWith("blob:")) return true
+    if (isPwaUrl(u) || u.startsWith("about:") || u.startsWith("data:") || u.startsWith("blob:")) return true
     // obsidian://, liens http hors domaine, mailto:, tel: : appli du systeme
     Linking.openURL(u).catch(() => {})
     return false
@@ -256,7 +263,7 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
           onMessage={onMessage}
           onNavigationStateChange={(nav) => { canGoBack.current = nav.canGoBack }}
           onLoadEnd={(e) => {
-            if (e.nativeEvent.url.startsWith(PWA_ORIGIN) && !e.nativeEvent.loading) {
+            if (isPwaUrl(e.nativeEvent.url) && !e.nativeEvent.loading) {
               AuraDevice.setPref(PAIRED_KEY, "1")
               if (pendingHash.current) ref.current?.injectJavaScript(`location.hash = ${JSON.stringify(pendingHash.current)}; true`)
               pendingHash.current = null
