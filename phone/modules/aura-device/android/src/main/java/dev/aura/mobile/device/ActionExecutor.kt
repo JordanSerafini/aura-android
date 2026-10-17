@@ -86,7 +86,8 @@ class ActionExecutor {
     val confirm = msg.optBoolean("confirm", false)
     val summary = msg.str("summary") ?: action
     val timeoutS = msg.optInt("timeout_s", 60)
-    // l'app ne peut que DURCIR la decision du bridge : ui_act tap / type se confirme toujours (PROTOCOL.md §9.2)
+    // l'app ne peut que DURCIR la decision du bridge : ui_act tap / type (PROTOCOL.md §9.2) et les actions sortantes ou
+    // intrusives (UiGuard.ALWAYS_CONFIRM : sms_send, call, camera_snap, notif_reply, message_send) se confirment toujours
     val mustConfirm = confirm || UiGuard.needsConfirm(action, params)
     val r = Running(id)
     running[id] = r
@@ -145,7 +146,7 @@ class ActionExecutor {
     val res = JSONObject()
     try {
       // pas de fenetre de confirmation ici : toucher / saisir dans une app ne se teste pas en local
-      if (UiGuard.needsConfirm(action, params)) throw ActionError("refused", "ui_act tap / type : seulement sur demande d'Aura, avec ta confirmation")
+      if (UiGuard.isUiOutgoing(action, params)) throw ActionError("refused", "ui_act tap / type : seulement sur demande d'Aura, avec ta confirmation")
       val out = run(action, params)
       res.put("ok", true).put("result", out ?: JSONObject.NULL)
     } catch (e: ActionError) {

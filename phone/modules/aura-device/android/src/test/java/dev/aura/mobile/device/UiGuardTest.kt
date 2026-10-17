@@ -142,6 +142,29 @@ class UiGuardTest {
     assertFalse(UiGuard.needsConfirm("flashlight", req("op" to "tap")))  // ne concerne que ui_act
   }
 
+  @Test fun actions_sortantes_et_intrusives_exigent_la_confirmation_locale() {
+    // plancher local : le champ confirm du bridge (false ou absent) n'est jamais ce qui decide
+    for (a in listOf("sms_send", "call", "camera_snap", "notif_reply", "message_send")) {
+      assertTrue(a, UiGuard.needsConfirm(a, req()))
+      assertTrue(a, UiGuard.needsConfirm(a, req("to" to "Maman", "text" to "ok")))
+    }
+    assertEquals(setOf("sms_send", "call", "camera_snap", "notif_reply", "message_send"), UiGuard.ALWAYS_CONFIRM)
+  }
+
+  @Test fun lecture_et_actions_anodines_restent_sans_confirmation_locale() {
+    // screen_read : sans confirmation (decision du 17/10), protege par la liste noire et le filtre mot de passe
+    for (a in listOf("screen_read", "sms_list", "call_log", "contacts_search", "notif_list", "location_get", "device_status",
+      "flashlight", "volume_set", "media_now", "open_app", "speak")) assertFalse(a, UiGuard.needsConfirm(a, req()))
+  }
+
+  @Test fun test_local_ne_refuse_que_toucher_et_saisir() {
+    // runLocal (bouton de test dans l'app, geste de l'utilisateur) : seul ui_act tap / type est refuse
+    assertTrue(UiGuard.isUiOutgoing("ui_act", req("op" to "tap")))
+    assertTrue(UiGuard.isUiOutgoing("ui_act", req("op" to "type")))
+    assertFalse(UiGuard.isUiOutgoing("ui_act", req("op" to "scroll")))
+    assertFalse(UiGuard.isUiOutgoing("sms_send", req("op" to "tap")))
+  }
+
   // ─── Correspondance des libelles ────────────────────────────────────────
 
   @Test fun exact_prefere_a_contient() {

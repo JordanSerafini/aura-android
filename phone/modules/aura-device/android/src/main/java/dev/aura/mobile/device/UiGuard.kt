@@ -94,7 +94,19 @@ object UiGuard {
     return (if (t.isNotEmpty()) t else if (childCount == 0) d else "").ifEmpty { null }
   }
 
-  fun needsConfirm(action: String, p: JSONObject): Boolean = action == "ui_act" && p.optString("op") in OUTGOING_OPS
+  /**
+   * Actions a effet de bord ou de collecte sensible : confirmation locale TOUJOURS, quoi qu'ait dit le bridge
+   * (revue securite du 17/10 : jusque-la un bridge compromis, un jeton fuite ou une injection de prompt cote
+   * orchestrateur envoyait `confirm:false` et le SMS, l'appel ou la photo partaient sans demander).
+   * screen_read n'y est pas (decision du 17/10) : il reste sans confirmation mais filtre (checkReadable, readLine).
+   */
+  val ALWAYS_CONFIRM = setOf("sms_send", "call", "camera_snap", "notif_reply", "message_send")
+
+  /** ui_act tap / type : le geste qui peut valider ou envoyer quelque chose dans une app. */
+  fun isUiOutgoing(action: String, p: JSONObject): Boolean = action == "ui_act" && p.optString("op") in OUTGOING_OPS
+
+  /** Plancher LOCAL de confirmation : l'app ne fait que durcir la decision du bridge, jamais l'assouplir. */
+  fun needsConfirm(action: String, p: JSONObject): Boolean = action in ALWAYS_CONFIRM || isUiOutgoing(action, p)
 
   /** Liste blanche saisie / relue : minuscules, forme de paquet, JAMAIS un paquet de la liste noire, sans doublon. */
   fun normalize(list: Collection<String>): List<String> =
