@@ -84,7 +84,9 @@ class ActionExecutor {
     val action = msg.optString("action")
     val params = msg.optJSONObject("params") ?: JSONObject()
     val confirm = msg.optBoolean("confirm", false)
-    val summary = msg.str("summary") ?: action
+    // `summary` du bridge : libelle d'affichage du journal SEULEMENT (actions sans confirmation). Ce que l'utilisateur
+    // approuve est reconstruit localement depuis action + params (ConfirmSummary), jamais lu dans le message du bridge
+    var summary = msg.str("summary") ?: action
     val timeoutS = msg.optInt("timeout_s", 60)
     // l'app ne peut que DURCIR la decision du bridge : ui_act tap / type (PROTOCOL.md §9.2) et les actions sortantes ou
     // intrusives (UiGuard.ALWAYS_CONFIRM : sms_send, call, camera_snap, notif_reply, message_send) se confirment toujours
@@ -102,6 +104,8 @@ class ActionExecutor {
         // ui_act : liste noire, liste blanche, forme AVANT de deranger l'utilisateur avec une confirmation qui serait refusee
         if (action == "ui_act") UiGuard.plan(params, UiSettings.whitelist())
         if (mustConfirm) {
+          // destinataire reel (nom + numero) resolu par Contacts ; introuvable ou ambigu : affiche brut, « non résolu »
+          summary = ConfirmSummary.build(action, params) { to -> try { Contacts.resolve(to) } catch (e: Exception) { null } }
           when (Aura.confirms.ask(id, action, summary, timeoutS - 3)) {
             // la pause a pu etre posee PENDANT l'attente (montre, PC, notification) : on re-verifie avant d'agir
             "accepted" -> Pause.check(action)
