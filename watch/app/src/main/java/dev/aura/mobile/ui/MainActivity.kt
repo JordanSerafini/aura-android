@@ -25,6 +25,7 @@ import dev.aura.mobile.AuraApp
 import dev.aura.mobile.audio.AudioPlayer
 import dev.aura.mobile.audio.VoiceRecorder
 import dev.aura.mobile.data.AuraBus
+import dev.aura.mobile.data.RecordTokenStore
 import dev.aura.mobile.health.Perms
 import dev.aura.mobile.notify.Haptics
 import dev.aura.mobile.notify.Notifier
@@ -88,7 +89,7 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     recorder = VoiceRecorder(this)
     // Recréation (processus tué, config) : l'intent d'origine de la tuile ne doit pas relancer un enregistrement.
-    val wantsRecord = savedInstanceState == null && intent?.getBooleanExtra(EXTRA_RECORD, false) == true
+    val wantsRecord = savedInstanceState == null && recordAllowed(intent)
     if (savedInstanceState == null) reopenConfirm(intent)
     askFirstPermissions(wantsRecord)
     if (wantsRecord && Perms.granted(this, Perms.MIC)) startRecording()
@@ -125,7 +126,7 @@ class MainActivity : ComponentActivity() {
     // Tuile, complication, notification : on revient à l'écran principal (même depuis Réglages/Conversations).
     AuraBus.goHome.tryEmit(Unit)
     reopenConfirm(intent)
-    if (intent.getBooleanExtra(EXTRA_RECORD, false) && !isRecording) {
+    if (recordAllowed(intent) && !isRecording) {
       if (Perms.granted(this, Perms.MIC)) startRecording() else requestMicThenRecord()
     }
   }
@@ -155,6 +156,14 @@ class MainActivity : ComponentActivity() {
     recorder.stopQuietly()
     super.onDestroy()
   }
+
+  /**
+   * L'intent demande-t-il un enregistrement ET porte-t-il le jeton secret de la tuile (RecordGate) ? MainActivity est
+   * exportee : sans le jeton, `record=true` envoye par une autre app ne demarre rien (l'app s'ouvre, l'utilisateur touche le micro).
+   */
+  private fun recordAllowed(intent: Intent?): Boolean =
+    intent?.getBooleanExtra(EXTRA_RECORD, false) == true &&
+      RecordTokenStore.gate(this).allows(intent.getStringExtra(EXTRA_RECORD_TOKEN))
 
   /** Pastille « N à valider » de la tuile : rouvre la demande d'accord en attente, si la montre la connaît encore. */
   private fun reopenConfirm(intent: Intent?) {
@@ -297,6 +306,7 @@ class MainActivity : ComponentActivity() {
 
   companion object {
     const val EXTRA_RECORD = "record"
+    const val EXTRA_RECORD_TOKEN = "record_token"
     const val EXTRA_CONFIRM = "open_confirm"
     private const val REMOTE_INPUT_KEY = "aura_text"
     private const val NO_NEWS_MS = 30_000L

@@ -18,6 +18,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import dev.aura.mobile.AuraApp
 import dev.aura.mobile.R
 import dev.aura.mobile.data.AuraBus
+import dev.aura.mobile.data.RecordTokenStore
 import dev.aura.mobile.protocol.AuraStatus
 import dev.aura.mobile.protocol.Paths
 import dev.aura.mobile.protocol.PauseSet
@@ -104,6 +105,11 @@ class AuraTileService : TileService() {
           .setPackageName(packageName)
           .setClassName(MainActivity::class.java.name)
           .addKeyToExtraMapping(MainActivity.EXTRA_RECORD, ActionBuilders.AndroidBooleanExtra.Builder().setValue(true).build())
+          // jeton secret : MainActivity est exportee, sans lui l'extra `record` ne demarre aucun enregistrement (RecordGate)
+          .addKeyToExtraMapping(
+            MainActivity.EXTRA_RECORD_TOKEN,
+            ActionBuilders.AndroidStringExtra.Builder().setValue(RecordTokenStore.gate(this).token()).build(),
+          )
           .build(),
       )
       .build()
