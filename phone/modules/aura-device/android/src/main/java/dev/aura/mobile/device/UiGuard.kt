@@ -77,6 +77,23 @@ object UiGuard {
   private fun blockedError() = ActionError("app_blocked", "App refusée d'office (banque, paiement, mots de passe, " +
     "authentificateur, paramètres système, Play Store) : jamais pilotable par Aura, même en liste blanche")
 
+  /** `screen_read` : l'app au premier plan est-elle sur la liste noire ? ActionError app_blocked, SANS lire l'ecran. */
+  fun checkReadable(pkg: String) {
+    if (blocked(pkg)) throw ActionError("app_blocked", "Lecture d'écran refusée d'office (banque, paiement, mots de passe, " +
+      "authentificateur, paramètres système, Play Store) : jamais lisible par Aura")
+  }
+
+  /**
+   * Ligne retenue pour un noeud de `screen_read` (texte, sinon description d'une feuille), ou null : noeud invisible,
+   * vide ou CHAMP MOT DE PASSE (jamais emis, meme masque : sa longueur serait deja une fuite).
+   */
+  fun readLine(text: String?, desc: String?, childCount: Int, password: Boolean, visible: Boolean): String? {
+    if (password || !visible) return null
+    val t = text?.trim().orEmpty()
+    val d = desc?.trim().orEmpty()
+    return (if (t.isNotEmpty()) t else if (childCount == 0) d else "").ifEmpty { null }
+  }
+
   fun needsConfirm(action: String, p: JSONObject): Boolean = action == "ui_act" && p.optString("op") in OUTGOING_OPS
 
   /** Liste blanche saisie / relue : minuscules, forme de paquet, JAMAIS un paquet de la liste noire, sans doublon. */

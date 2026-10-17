@@ -58,6 +58,33 @@ class UiGuardTest {
     assertEquals(UiGuard.WHITELIST_MAX, UiGuard.normalize(many).size)
   }
 
+  // ─── screen_read : meme liste noire que ui_act ──────────────────────────
+
+  @Test fun lecture_d_ecran_refusee_dans_les_apps_sensibles() {
+    for (p in listOf("com.boursorama.android.clients", "com.x8bit.bitwarden", "com.google.android.apps.authenticator2",
+      "com.android.systemui", "com.android.settings", "dev.aura.mobile", "COM.REVOLUT.REVOLUT")) {
+      assertEquals(p, "app_blocked", codeOf { UiGuard.checkReadable(p) })
+    }
+  }
+
+  @Test fun lecture_d_ecran_permise_dans_les_apps_ordinaires() {
+    for (p in listOf("com.whatsapp", "com.android.chrome", "com.google.android.apps.maps", "")) UiGuard.checkReadable(p)
+  }
+
+  @Test fun lecture_d_ecran_n_emet_jamais_un_champ_mot_de_passe() {
+    assertEquals(null, UiGuard.readLine("hunter2", null, 0, password = true, visible = true))
+    assertEquals(null, UiGuard.readLine(null, "Mot de passe", 0, password = true, visible = true))
+    assertEquals("Bonjour", UiGuard.readLine(" Bonjour ", null, 0, password = false, visible = true))
+  }
+
+  @Test fun lecture_d_ecran_ignore_invisible_et_vide_et_prefere_le_texte() {
+    assertEquals(null, UiGuard.readLine("cache", null, 0, password = false, visible = false))
+    assertEquals(null, UiGuard.readLine("  ", "  ", 0, password = false, visible = true))
+    assertEquals("Envoyer", UiGuard.readLine(null, "Envoyer", 0, password = false, visible = true))   // feuille : description
+    assertEquals(null, UiGuard.readLine(null, "Conteneur", 3, password = false, visible = true))      // parent : pas de description
+    assertEquals("texte", UiGuard.readLine("texte", "desc", 0, password = false, visible = true))
+  }
+
   // ─── Liste blanche ──────────────────────────────────────────────────────
 
   @Test fun defaut_whatsapp_seul() {

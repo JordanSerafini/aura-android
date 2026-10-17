@@ -14,6 +14,7 @@ import org.json.JSONObject
  * Service d'accessibilite OPTIONNEL (desactive par defaut, l'utilisateur l'active dans Parametres →
  * Accessibilite → Aura). Trois usages :
  *  - `screen_read` : texte visible de la fenetre active (PROTOCOL.md §7.4, balise non fiable par le bridge) ;
+ *    refuse les apps de la liste noire d'UiGuard (app_blocked) et n'emet jamais un champ mot de passe ;
  *  - `message_send` WhatsApp sans notification : apres ouverture de la conversation pre-remplie, appui
  *    sur « Envoyer » a la place de l'utilisateur, UNIQUEMENT si la demande a ete confirmee par lui ;
  *  - `ui_act` (§9.2) : toucher, saisir, defiler, retour, accueil, attendre un texte, DANS LES APPS DE LA LISTE
@@ -68,14 +69,13 @@ class AuraAccessibilityService : AccessibilityService() {
       Pause.check("screen_read")  // Pause d'Aura : meme si l'appelant a oublie de la verifier
       val root = svc().rootInActiveWindow ?: throw ActionError("unavailable", "Aucune fenêtre lisible (écran éteint ou verrouillé ?)")
       val pkg = root.packageName?.toString() ?: ""
+      UiGuard.checkReadable(pkg)  // meme liste noire que ui_act : banque, mots de passe, 2FA... jamais lus (rien n'est parcouru)
       Journal.noteGesture(appLabel(pkg), "lecture")  // journal : quelle app a ete lue (le garde-fou, lui, ne change pas)
       val sb = StringBuilder()
       fun walk(n: AccessibilityNodeInfo?, depth: Int) {
         if (n == null || sb.length >= TEXT_MAX || depth > 60) return
-        val t = n.text?.toString()?.trim().orEmpty()
-        val d = n.contentDescription?.toString()?.trim().orEmpty()
-        val line = if (t.isNotEmpty()) t else if (n.childCount == 0) d else ""
-        if (line.isNotEmpty() && n.isVisibleToUser) sb.append(line).append('\n')
+        val line = UiGuard.readLine(n.text?.toString(), n.contentDescription?.toString(), n.childCount, n.isPassword, n.isVisibleToUser)
+        if (line != null) sb.append(line).append('\n')
         for (i in 0 until n.childCount) walk(n.getChild(i), depth + 1)
       }
       walk(root, 0)
