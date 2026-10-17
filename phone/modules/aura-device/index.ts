@@ -39,6 +39,7 @@ export interface AuraDeviceNative {
   setWatchSettings(json: string): void
   getWatchSettings(): string
   openSettings(kind: string): boolean
+  consumeTalkNonce(nonce: string): boolean
   getPref(key: string): string | null
   setPref(key: string, value: string): void
   getInfo(): string

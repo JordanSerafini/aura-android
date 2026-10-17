@@ -193,6 +193,9 @@ class AuraDeviceModule : Module() {
       Perms.openSettings(appContext.currentActivity ?: context, kind)
     }
 
+    // lien aura://talk?autostart=1&n=<jeton> : le micro ne demarre que si le jeton vient de la tuile (usage unique, 30 s)
+    Function("consumeTalkNonce") { n: String -> Aura.talkNonce.consume(n, System.currentTimeMillis()) }
+
     Function("getPref") { key: String -> Aura.prefs.getString("js_$key", null) }
 
     Function("setPref") { key: String, value: String ->

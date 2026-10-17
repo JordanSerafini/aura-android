@@ -11,7 +11,8 @@ import android.util.Log
 /**
  * Tuile Réglages rapides « Dicter à Aura » : un tap ouvre directement la conversation vocale mains libres de l'app (le même
  * écran que le bouton 🎧 et le raccourci « Parler » de l'icône : TalkScreen), qui démarre l'écoute toute seule
- * (`aura://talk?autostart=1`). Téléphone verrouillé, Android demande d'abord le déverrouillage (`unlockAndRun`), la tuile ne
+ * (`aura://talk?autostart=1&n=<jeton>`, jeton à usage unique émis ici : un lien venu d'ailleurs n'ouvre jamais le micro
+ * sans geste, TalkNonce). Téléphone verrouillé, Android demande d'abord le déverrouillage (`unlockAndRun`), la tuile ne
  * contourne pas l'écran de verrouillage. Aucune permission en plus ; le micro est demandé par l'écran Talk s'il manque.
  *
  * Ajout par l'utilisateur : tirer le panneau des Réglages rapides complet, crayon (Modifier), glisser « Dicter à Aura » dans la grille.
@@ -34,7 +35,8 @@ class DictateTileService : TileService() {
 
   private fun launch() {
     // MainActivity est ciblee par le package + le lien : meme chemin que le raccourci de l'icone (App.tsx : wantsTalk)
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(TALK_URI)).setPackage(packageName)
+    // jeton a usage unique : sans lui, aura://talk?autostart=1 ouvre l'ecran Talk SANS lancer le micro (TalkNonce)
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("$TALK_URI&n=${Aura.talkNonce.issue(System.currentTimeMillis())}")).setPackage(packageName)
       .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     try {
       if (Build.VERSION.SDK_INT >= 34) {

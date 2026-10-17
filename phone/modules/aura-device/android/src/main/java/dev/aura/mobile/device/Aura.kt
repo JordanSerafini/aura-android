@@ -47,6 +47,8 @@ object Aura {
   val watch by lazy { WatchLink() }
   val relay by lazy { Relay(BridgeIo) }
   val confirms by lazy { ConfirmManager() }
+  /** Jeton a usage unique du lien aura://talk?autostart=1 (emis par la tuile, consomme par le JS) : TalkNonce. */
+  val talkNonce by lazy { TalkNonce() }
   val executor by lazy { ActionExecutor() }
 
   @Synchronized

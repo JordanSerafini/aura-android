@@ -64,8 +64,13 @@ function reportScreen() {
 function wantsTalk(url: string | null): boolean {
   return !!url && /^aura:\/\/talk\b/.test(url)
 }
+// Le micro ne demarre SANS GESTE que si le lien porte le jeton a usage unique que la tuile vient d'emettre
+// (AuraDevice.consumeTalkNonce, 30 s) : le schema aura:// est ouvrable par n'importe quelle app ou page web,
+// un lien sans jeton valide ouvre l'ecran Talk et attend le tap de l'utilisateur
 function wantsAutoStart(url: string | null): boolean {
-  return !!url && /^aura:\/\/talk\?(?:.*&)?autostart=1\b/.test(url)
+  if (!url || !/^aura:\/\/talk\?(?:.*&)?autostart=1\b/.test(url)) return false
+  const nonce = /[?&]n=([0-9a-f]{32})\b/.exec(url)?.[1]
+  return !!nonce && AuraDevice.consumeTalkNonce(nonce)
 }
 // lien profond -> ancre de la PWA : aura://conv/<id> (partage, assistant) ; aura://notifs et
 // aura://notif/<id>/act|ask (boutons des notifications Android d'Aura, Notifs.kt)
