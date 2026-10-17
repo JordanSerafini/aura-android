@@ -3,7 +3,8 @@ import { requireNativeModule } from "expo"
 type Sub = { remove: () => void }
 
 export interface AuraDeviceNative {
-  configure(url: string, token: string, poste: string, version: string): void
+  /** "" si pris en compte, sinon le motif du refus (URL du bridge qui n'est pas wss:// dans un APK de release) */
+  configure(url: string, token: string, poste: string, version: string): string
   startService(): void
   stopService(): void
   getState(): string

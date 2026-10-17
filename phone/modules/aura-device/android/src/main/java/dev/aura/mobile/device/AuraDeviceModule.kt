@@ -2,6 +2,7 @@ package dev.aura.mobile.device
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
@@ -49,12 +50,22 @@ class AuraDeviceModule : Module() {
       Usage.maybeReport()  // usage_report : au plus une fois par jour, des nombres seulement (PROTOCOL.md §11.18)
     }
 
+    // Rend "" si tout est pris en compte, sinon le motif du refus (jamais l'URL) : en release une URL qui n'est pas
+    // wss:// n'est pas enregistree (BridgeUrl), le jeton ne partirait pas en clair
     Function("configure") { url: String, token: String, poste: String, version: String ->
       val e = Aura.prefs.edit()
-      if (url.isNotBlank()) e.putString("url", url)
+      var refused = ""
+      if (url.isNotBlank()) {
+        if (BridgeUrl.accepted(url, Aura.debuggable)) e.putString("url", url.trim())
+        else {
+          refused = "URL du bridge refusée : wss:// obligatoire"
+          Log.w(Aura.TAG, "configure : URL du bridge refusee (schema non wss://)")
+        }
+      }
       if (token.isNotBlank()) e.putString("token", token)
       if (poste.isNotBlank()) e.putString("poste", poste)
       e.putString("version", version).apply()
+      refused
     }
 
     Function("startService") {

@@ -63,7 +63,10 @@ object Aura {
 
   // ─── Configuration ──────────────────────────────────────────────────────
 
-  val url: String get() = prefs.getString("url", null) ?: DEFAULT_URL
+  /** APK debuggable ? (seul cas ou un ws:// est accepte : BridgeUrl). */
+  val debuggable: Boolean get() = (app.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+  /** Une URL ws:// deja enregistree par une ancienne version est ignoree en release : le jeton ne part jamais en clair. */
+  val url: String get() = BridgeUrl.effective(prefs.getString("url", null), DEFAULT_URL, debuggable)
   val token: String get() = prefs.getString("token", null) ?: ""
   val poste: String get() = prefs.getString("poste", null) ?: DEFAULT_POSTE
   /**

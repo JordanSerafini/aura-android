@@ -1,14 +1,19 @@
 import { execSync } from "node:child_process"
 import type { ExpoConfig } from "expo/config"
+import { assertUrls } from "./build-config"
 
 // Configuration fournie au build par l'environnement, jamais ecrite dans un fichier suivi par git :
 //   AURA_MOBILE_DEVICE_TOKEN  jeton de l'appareil, emis par votre serveur
 //   AURA_BRIDGE_URL           point d'entree WebSocket du serveur (wss://...)
 //   AURA_PWA_URL              URL de l'interface web chargee dans l'onglet Aura (https://...)
+//   AURA_ALLOW_INSECURE_DEV   1 = autorise ws:// et http:// (serveur local), jamais en NODE_ENV=production
 // Le jeton est embarque dans l'APK : ne pas diffuser un APK construit avec un vrai jeton.
 const deviceToken = process.env.AURA_MOBILE_DEVICE_TOKEN ?? ""
 const bridgeUrl = process.env.AURA_BRIDGE_URL ?? "wss://example.invalid/ws"
 const pwaUrl = process.env.AURA_PWA_URL ?? "https://example.invalid/app/"
+// wss:// et https:// obligatoires (le jeton part en clair sinon) ; ws:// / http:// seulement avec AURA_ALLOW_INSECURE_DEV=1
+// et hors NODE_ENV=production (build-config.ts). Echoue ICI, avant tout prebuild.
+assertUrls(bridgeUrl, pwaUrl, process.env)
 // Version REELLE (03/10) : jusqu'ici l'app annoncait « v1.0.0 » build apres build, impossible de savoir quelle APK
 // tournait sur le S22. versionName et versionCode s'incrementent a CHAQUE APK publiee (versionCode strictement croissant,
 // sinon Android refuse la mise a jour) ; buildId (date + commit, « -dirty » si l'arbre n'etait pas commite) part dans le
