@@ -34,6 +34,14 @@ export function isPwaUrl(url: string): boolean {
   return splitUrl(url)?.origin.toLowerCase() === PWA_ORIGIN.toLowerCase()
 }
 
+// Liens que la WebView peut confier a une autre appli : http(s), mailto et tel SEULEMENT (revue securite du 17/10). Avant,
+// tout schema non-PWA partait dans Linking.openURL : intent:, sms:, market:, file:, obsidian:// ou deep link d'une appli tierce
+// ouverts par une page de la PWA (ou d'une origine tierce chargee par erreur). Sans espace ni controle : une URL « http » qui en
+// contient n'est pas une URL.
+export function isExternalLink(url: string): boolean {
+  return /^(?:https?:\/\/[^/?#\s]+|mailto:|tel:)[^\s\u0000-\u001f]*$/i.test(url)
+}
+
 // Erreur HTTP de la PAGE de la PWA (pas d'une ressource : une image 404 ne doit pas masquer l'app) -> message utile.
 // Avant, un 502 du reverse proxy (bridge arrete) laissait une page blanche sans explication.
 export function httpErrorMessage(status: number, url: string): string | null {
@@ -228,8 +236,9 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
   const onShouldStart = useCallback((req: ShouldStartLoadRequest) => {
     const u = req.url
     if (isPwaUrl(u) || u.startsWith("about:") || u.startsWith("data:") || u.startsWith("blob:")) return true
-    // obsidian://, liens http hors domaine, mailto:, tel: : appli du systeme
-    Linking.openURL(u).catch(() => {})
+    // liens http(s) hors domaine, mailto:, tel: : appli du systeme ; tout autre schema (intent:, sms:, market:, file:,
+    // obsidian:...) est ignore, sans rien ouvrir
+    if (isExternalLink(u)) Linking.openURL(u).catch(() => {})
     return false
   }, [])
 

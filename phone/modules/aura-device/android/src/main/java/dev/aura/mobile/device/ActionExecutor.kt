@@ -218,7 +218,10 @@ class ActionExecutor {
     "media_control" -> mediaControl(req(p, "cmd"))
     "media_now" -> mediaNow()
     "open_app" -> openApp(p.str("package"), p.str("name"))
-    "open_url" -> JSONObject().put("mode", Launcher.start(Intent(Intent.ACTION_VIEW, Uri.parse(req(p, "url"))), req(p, "url")))
+    "open_url" -> {
+      val url = UrlGuard.webUrl(req(p, "url"))  // http(s) seulement : ni file:, content:, market:, tel:, sms: ni deep link d'une autre appli
+      JSONObject().put("mode", Launcher.start(Intent(Intent.ACTION_VIEW, Uri.parse(url)), url))
+    }
     "navigate" -> navigate(req(p, "destination"), p.str("mode"))
     "clipboard_set" -> { clipboard().setPrimaryClip(ClipData.newPlainText("Aura", req(p, "text"))); null }
     "clipboard_get" -> clipboardGet()
