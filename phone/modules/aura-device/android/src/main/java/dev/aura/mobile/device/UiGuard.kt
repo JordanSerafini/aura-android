@@ -103,7 +103,7 @@ object UiGuard {
   val ALWAYS_CONFIRM = setOf("sms_send", "call", "camera_snap", "notif_reply", "message_send")
 
   /** ui_act tap / type : le geste qui peut valider ou envoyer quelque chose dans une app. */
-  fun isUiOutgoing(action: String, p: JSONObject): Boolean = action == "ui_act" && p.optString("op") in OUTGOING_OPS
+  fun isUiOutgoing(action: String, p: JSONObject): Boolean = action == "ui_act" && p.optString("op").trim() in OUTGOING_OPS  // meme trim que plan
 
   /** Plancher LOCAL de confirmation : l'app ne fait que durcir la decision du bridge, jamais l'assouplir. */
   fun needsConfirm(action: String, p: JSONObject): Boolean = action in ALWAYS_CONFIRM || isUiOutgoing(action, p)

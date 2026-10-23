@@ -54,7 +54,7 @@ object ConfirmSummary {
 
   private fun uiAct(p: JSONObject): String {
     val app = clean(p.str("app"), 40).ifEmpty { "une app" }
-    return when (p.str("op")) {
+    return when (p.str("op")?.trim()) {
       "tap" -> "Toucher ${quote(p.str("text") ?: p.str("desc"), 60)} dans $app"
       "type" -> "Saisir ${quote(p.str("text"))} dans $app"
       else -> "Contrôler $app (${clean(p.str("op"), 20)})"
