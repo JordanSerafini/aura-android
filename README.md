@@ -90,6 +90,8 @@ cd android && ./gradlew assembleDebug
 
 `phone/scripts/build.sh` chains these steps for a signed release build (it needs the signing variables above).
 
+`phone/scripts/jvm-tests/run.sh` runs the pure Kotlin logic tests of the native module on the JVM, without `expo prebuild` or `node_modules` (it borrows the watch's Gradle wrapper, offline). Tests that touch Android classes are skipped there; the full suite stays `./gradlew :aura-device:testReleaseUnitTest` after a prebuild.
+
 Watch app:
 
 ```bash
