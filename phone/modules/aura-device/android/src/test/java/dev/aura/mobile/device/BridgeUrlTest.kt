@@ -25,6 +25,16 @@ class BridgeUrlTest {
     assertFalse(BridgeUrl.accepted("ws://", debuggable = true))
   }
 
+  @Test fun port_ou_hote_invalide_refuse() {
+    // revue du 24/10 (F4) : OkHttp leverait dans connect() et la reconnexion s'arreterait
+    for (u in listOf("wss://hote:99999/ws", "wss://hote:abc/ws", "wss://hote:0/ws", "wss://[hote/ws", "wss://ho^te/ws")) {
+      assertFalse(u, BridgeUrl.accepted(u, debuggable = false))
+      assertFalse(u, BridgeUrl.accepted(u.replaceFirst("wss", "ws"), debuggable = true))
+    }
+    assertTrue(BridgeUrl.accepted("wss://hote.exemple:65535/ws", debuggable = false))
+    assertTrue(BridgeUrl.accepted("wss://[::1]:8443/ws", debuggable = false))
+  }
+
   @Test fun url_enregistree_en_clair_est_ignoree_en_release() {
     // une ancienne version a pu ecrire ws:// dans les prefs : en release on retombe sur la valeur par defaut
     assertEquals(default, BridgeUrl.effective("ws://hote.exemple/ws", default, debuggable = false))

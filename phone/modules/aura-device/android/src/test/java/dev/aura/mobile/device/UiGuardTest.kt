@@ -68,7 +68,12 @@ class UiGuardTest {
   }
 
   @Test fun lecture_d_ecran_permise_dans_les_apps_ordinaires() {
-    for (p in listOf("com.whatsapp", "com.android.chrome", "com.google.android.apps.maps", "")) UiGuard.checkReadable(p)
+    for (p in listOf("com.whatsapp", "com.android.chrome", "com.google.android.apps.maps")) UiGuard.checkReadable(p)
+  }
+
+  @Test fun lecture_d_ecran_refusee_quand_l_app_est_inconnue() {
+    // revue du 24/10 (F2) : un packageName null devenait "" et passait la liste noire, tout l'arbre etait lu
+    for (p in listOf("", "   ", "\t")) assertEquals("« $p »", "unavailable", codeOf { UiGuard.checkReadable(p) })
   }
 
   @Test fun lecture_d_ecran_n_emet_jamais_un_champ_mot_de_passe() {

@@ -79,6 +79,8 @@ object UiGuard {
 
   /** `screen_read` : l'app au premier plan est-elle sur la liste noire ? ActionError app_blocked, SANS lire l'ecran. */
   fun checkReadable(pkg: String) {
+    // Paquet inconnu (packageName null => "") : on ne sait pas quelle app lire, donc refus, comme ui_act (wrong_app)
+    if (pkg.isBlank()) throw ActionError("unavailable", "Fenêtre au premier plan sans nom d'app : lecture d'écran refusée")
     if (blocked(pkg)) throw ActionError("app_blocked", "Lecture d'écran refusée d'office (banque, paiement, mots de passe, " +
       "authentificateur, paramètres système, Play Store) : jamais lisible par Aura")
   }

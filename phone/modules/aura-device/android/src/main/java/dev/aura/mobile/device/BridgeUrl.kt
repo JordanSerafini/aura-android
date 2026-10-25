@@ -9,7 +9,21 @@ object BridgeUrl {
   private val WSS = Regex("^wss://[^/?#\\s]+(?:[/?#]\\S*)?$", RegexOption.IGNORE_CASE)
   private val WS = Regex("^wss?://[^/?#\\s]+(?:[/?#]\\S*)?$", RegexOption.IGNORE_CASE)
 
-  fun accepted(url: String, debuggable: Boolean): Boolean = (if (debuggable) WS else WSS).matches(url.trim())
+  fun accepted(url: String, debuggable: Boolean): Boolean {
+    val u = url.trim()
+    return (if (debuggable) WS else WSS).matches(u) && parsable(u)
+  }
+
+  /**
+   * Revue du 24/10 (F4) : la regex laissait passer `wss://hote:99999/ws` ou `wss://hote:abc/ws`, qu'OkHttp refuse par une
+   * exception dans connect() : plus de reconnexion. On exige un hote analysable et un port absent ou dans 1..65535.
+   */
+  private fun parsable(u: String): Boolean = try {
+    val uri = java.net.URI(u)
+    !uri.host.isNullOrEmpty() && (uri.port == -1 || uri.port in 1..65535)
+  } catch (_: java.net.URISyntaxException) {
+    false
+  }
 
   /** L'URL a utiliser : celle de la config si elle est acceptee, sinon la valeur par defaut (jamais de connexion en clair). */
   fun effective(configured: String?, default: String, debuggable: Boolean): String =
