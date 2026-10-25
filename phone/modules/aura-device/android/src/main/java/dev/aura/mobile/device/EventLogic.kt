@@ -112,7 +112,7 @@ class EventGate(
 /** Batterie basse « une fois par descente » : arme au depart, se desarme a l'envoi, se rearme a la charge ou a 20 %. */
 class BatteryLatch(var armed: Boolean = true) {
   companion object {
-    const val LOW = PhoneContext.LOW_BATTERY  // 15 %
+    const val LOW = ContextLogic.LOW_BATTERY  // 15 %
     const val REARM = 20
   }
 
@@ -162,7 +162,7 @@ object ZoneTracker {
     val inside = mutableSetOf<String>()
     val events = mutableListOf<Pair<String, String>>()
     for (z in zones) {
-      val d = PhoneContext.meters(lat, lon, z.lat, z.lon)
+      val d = ContextLogic.meters(lat, lon, z.lat, z.lon)
       val was = prev != null && z.name in prev
       val now2 = if (was) d <= z.radiusM * EXIT_FACTOR else d <= z.radiusM
       if (now2) inside += z.name
@@ -172,11 +172,17 @@ object ZoneTracker {
   }
 }
 
-/** Texte de tiers remonte au bridge : une ligne, sans caracteres de controle, tronque (defense en profondeur). */
+/** Texte de tiers remonte au bridge : une ligne, sans caracteres de controle ni marques bidi, tronque (defense en profondeur). */
 fun clipEventText(s: CharSequence?, max: Int): String {
-  val one = (s?.toString() ?: "").replace(Regex("[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+"), " ")
+  // U+200E/F, U+202A-E (dont RLO qui retourne l'affichage), U+2066-2069 : invisibles, ils falsifient un nom d'expediteur
+  val one = (s?.toString() ?: "").replace(Regex("[\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]+"), "")
+    .replace(Regex("[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+"), " ")
     .trim().replace(Regex("\\s+"), " ")
-  return if (one.length <= max) one else one.take(max - 1) + "…"
+  if (one.length <= max) return one
+  var cut = (max - 1).coerceAtLeast(0)
+  // ne jamais couper entre les deux moities d'un emoji (paire de substituts)
+  if (cut > 0 && Character.isHighSurrogate(one[cut - 1]) && Character.isLowSurrogate(one[cut])) cut--
+  return one.take(cut) + "…"
 }
 
 /**

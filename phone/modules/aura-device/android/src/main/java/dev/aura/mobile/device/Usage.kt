@@ -67,7 +67,7 @@ object Usage {
           if (all.isEmpty()) return@execute
           // le bridge refuse au-dela de 6 usage_report par minute et par socket : 5 jours au plus par passage, les plus anciens
           // d'abord ; s'il en reste, le jour n'est pas marque « envoye » et le passage suivant continue
-          val reports = all.take(UsageLogic.MAX_REPORTS_PER_PASS)
+          val reports = UsageLogic.batch(all)
           val sent = reports.filter { Aura.bridge.send(it.message) }
           if (sent.isEmpty()) return@execute
           UsageLogic.subtract(b, sent)

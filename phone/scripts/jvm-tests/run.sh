@@ -7,8 +7,8 @@ H="$(cd "$(dirname "$0")" && pwd)"
 M="$H/../../modules/aura-device/android/src"
 S="$M/main/java/dev/aura/mobile/device"; T="$M/test/java/dev/aura/mobile/device"
 # dependent d'Aura/PhoneContext (Android) : hors harnais
-IMPURS=" EventLogic WatchConvs "
-SKIP=" PhoneContextTest PhoneEventsTest CallLogicTest NatifTest0310 "
+IMPURS=" WatchConvs "
+SKIP=" PhoneEventsTest CallLogicTest NatifTest0310 "
 rm -rf "$H/build/w" && mkdir -p "$H/build/w/main" "$H/build/w/test"
 for f in "$S"/*.kt; do
   b=$(basename "$f" .kt)

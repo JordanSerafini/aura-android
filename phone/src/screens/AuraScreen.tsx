@@ -8,6 +8,7 @@ import type { ShouldStartLoadRequest } from "react-native-webview/lib/WebViewTyp
 import { DEVICE_TOKEN, POSTE, PWA_ORIGIN, PWA_URL, theme } from "../config"
 import { AuraDevice } from "../native"
 import { Button } from "../ui"
+import { isPwaUrlOf, splitUrl } from "../linkGuards"
 
 const PAIRED_KEY = "pwa_paired"
 
@@ -20,18 +21,9 @@ export function parseWebBg(css: unknown): { hex: string, light: boolean } | null
   return { hex, light: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.5 }
 }
 
-// Origine et chemin d'une URL http(s), SANS `URL` : sous Hermes le polyfill de `URL` n'implemente pas tous les accesseurs
-// (`pathname`, `origin` levent « not implemented » selon la version de React Native).
-function splitUrl(url: string): { origin: string, path: string } | null {
-  const m = /^(https?:\/\/[^/?#]+)([^?#]*)/i.exec(url)
-  return m ? { origin: m[1], path: m[2] || "/" } : null
-}
-
-// URL servie par la PWA : origine EGALE, pas un prefixe. Avec `startsWith(PWA_ORIGIN)`, https://hote.evil.tld ou
-// https://hote@evil.tld passaient pour la PWA et se chargeaient dans la WebView (ponts natifs injectes, micro accorde
-// sans invite par mediaCapturePermissionGrantType="grant").
+// URL servie par la PWA : origine EGALE, pas un prefixe (garde et raison dans linkGuards.ts, testee par check-link-guards.mjs).
 export function isPwaUrl(url: string): boolean {
-  return splitUrl(url)?.origin.toLowerCase() === PWA_ORIGIN.toLowerCase()
+  return isPwaUrlOf(url, PWA_ORIGIN)
 }
 
 // Liens que la WebView peut confier a une autre appli : http(s), mailto et tel SEULEMENT (revue securite du 17/10). Avant,

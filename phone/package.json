@@ -8,6 +8,7 @@
     "prebuild": "expo prebuild --platform android --clean",
     "typecheck": "tsc --noEmit",
     "test:config": "node scripts/check-build-config.cjs",
+    "test:guards": "node scripts/check-link-guards.mjs",
     "build": "bash scripts/build.sh",
     "android": "expo run:android",
     "ios": "expo run:ios"

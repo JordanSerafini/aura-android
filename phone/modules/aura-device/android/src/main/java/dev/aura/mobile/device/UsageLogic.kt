@@ -75,6 +75,9 @@ object UsageLogic {
     return out
   }
 
+  /** Les rapports d'un passage : les plus anciens d'abord, MAX_REPORTS_PER_PASS au plus (le bridge en refuse 6 par minute). */
+  fun batch(all: List<Report>): List<Report> = all.take(MAX_REPORTS_PER_PASS)
+
   /** Retire de `buckets` ce qui vient de partir. */
   fun subtract(buckets: UsageBuckets, sent: List<Report>) {
     for (r in sent) {

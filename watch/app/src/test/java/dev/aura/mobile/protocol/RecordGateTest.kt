@@ -52,4 +52,23 @@ class RecordGateTest {
     assertEquals("a".repeat(32), t)
     assertTrue(g.allows(t))
   }
+
+  @Test fun le_cablage_de_main_activity_exige_l_extra_record_ET_le_bon_jeton() {
+    val g = gate()
+    val t = g.token()
+    assertTrue(g.permits(true, t))
+    assertFalse("jeton valide mais record absent : rien ne demarre", g.permits(false, t))
+    assertFalse("record=true sans jeton (autre app)", g.permits(true, null))
+    assertFalse(g.permits(true, "b".repeat(32)))
+    assertFalse(g.permits(false, null))
+    assertFalse("aucun jeton emis", gate().permits(true, "a".repeat(32)))
+  }
+
+  @Test fun jeton_a_la_longueur_exacte() {
+    val m = Mem("a".repeat(RecordGate.MIN_LEN - 1))
+    assertFalse(gate(m).allows("a".repeat(RecordGate.MIN_LEN - 1)))  // 31 : trop court, refuse meme egal
+    val ok = Mem("a".repeat(RecordGate.MIN_LEN))
+    assertTrue(gate(ok).allows("a".repeat(RecordGate.MIN_LEN)))
+    assertFalse(gate(ok).allows("a".repeat(RecordGate.MIN_LEN + 1)))
+  }
 }

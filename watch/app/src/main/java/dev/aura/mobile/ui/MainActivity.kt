@@ -162,8 +162,8 @@ class MainActivity : ComponentActivity() {
    * exportee : sans le jeton, `record=true` envoye par une autre app ne demarre rien (l'app s'ouvre, l'utilisateur touche le micro).
    */
   private fun recordAllowed(intent: Intent?): Boolean =
-    intent?.getBooleanExtra(EXTRA_RECORD, false) == true &&
-      RecordTokenStore.gate(this).allows(intent.getStringExtra(EXTRA_RECORD_TOKEN))
+    RecordTokenStore.gate(this).permits(
+      intent?.getBooleanExtra(EXTRA_RECORD, false) == true, intent?.getStringExtra(EXTRA_RECORD_TOKEN))
 
   /** Pastille « N à valider » de la tuile : rouvre la demande d'accord en attente, si la montre la connaît encore. */
   private fun reopenConfirm(intent: Intent?) {

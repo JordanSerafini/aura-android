@@ -29,6 +29,8 @@ echo "build: $AURA_BUILD_ID"
 
 [ -d node_modules ] || npm ci
 npx tsc --noEmit
+npm run --silent test:config
+npm run --silent test:guards
 
 if [ "${SKIP_PREBUILD:-0}" != "1" ] || [ ! -d android ]; then
   CI=1 npx expo prebuild -p android --clean --no-install

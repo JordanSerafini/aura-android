@@ -15,6 +15,7 @@ import ConfirmSheet from "./src/ConfirmSheet"
 import SettingsScreen from "./src/screens/SettingsScreen"
 import TalkScreen from "./src/screens/TalkScreen"
 import WatchScreen from "./src/screens/WatchScreen"
+import { autoStartNonce } from "./src/linkGuards"
 
 // Réglages accepte une section : « Contrôle d'apps » ouvre Réglages en défilant jusqu'à sa carte (nav.ts)
 type Tabs = { Aura: undefined, Téléphone: undefined, Actions: undefined, Montre: undefined, Réglages: SettingsParams }
@@ -68,8 +69,7 @@ function wantsTalk(url: string | null): boolean {
 // (AuraDevice.consumeTalkNonce, 30 s) : le schema aura:// est ouvrable par n'importe quelle app ou page web,
 // un lien sans jeton valide ouvre l'ecran Talk et attend le tap de l'utilisateur
 function wantsAutoStart(url: string | null): boolean {
-  if (!url || !/^aura:\/\/talk\?(?:.*&)?autostart=1\b/.test(url)) return false
-  const nonce = /[?&]n=([0-9a-f]{32})\b/.exec(url)?.[1]
+  const nonce = autoStartNonce(url)
   return !!nonce && AuraDevice.consumeTalkNonce(nonce)
 }
 // lien profond -> ancre de la PWA : aura://conv/<id> (partage, assistant) ; aura://notifs et

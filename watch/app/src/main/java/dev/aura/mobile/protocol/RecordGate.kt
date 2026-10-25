@@ -28,6 +28,9 @@ class RecordGate(
     return constantTimeEquals(candidate, cur)
   }
 
+  /** Le cablage de MainActivity.recordAllowed : l'extra `record` doit etre vrai ET porter un jeton accepte (logique pure, testee). */
+  fun permits(wantsRecord: Boolean, candidate: String?): Boolean = wantsRecord && allows(candidate)
+
   private fun constantTimeEquals(a: String, b: String): Boolean {
     if (a.length != b.length) return false
     var d = 0

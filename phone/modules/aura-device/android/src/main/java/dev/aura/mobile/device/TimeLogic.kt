@@ -42,7 +42,11 @@ object TimeLogic {
       val o = arr.optJSONObject(i) ?: continue
       val id = if (o.isNull("id")) "" else (o.opt("id") as? String ?: "")
       val m = ID.matchEntire(id) ?: continue
-      val minutes = (o.opt("minutes") as? Number)?.toInt() ?: 0  // un nombre, pas une chaine qui y ressemble
+      // un nombre, pas une chaine qui y ressemble ; teste en Double AVANT toute conversion : Long.toInt() fait un modulo
+      // 2^32 (4294967297 -> 1 minute), donc un « 1 minute » valide venait d'un nombre enorme
+      val raw = (o.opt("minutes") as? Number)?.toDouble() ?: 0.0
+      if (!(raw >= 1.0 && raw < 481.0)) continue
+      val minutes = raw.toInt()
       if (minutes !in 1..480 || !seen.add(id)) continue
       out += TimeItem(id, m.groupValues[1], text(o, "title", 80), text(o, "client", 60), minutes, text(o, "evidence", 120),
         text(o, "copy_text", 300))
