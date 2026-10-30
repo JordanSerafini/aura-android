@@ -41,6 +41,8 @@ export interface AuraDeviceNative {
   getWatchSettings(): string
   openSettings(kind: string): boolean
   consumeTalkNonce(nonce: string): boolean
+  /** Revue sécurité du 27/10 (F1) : ce lien aura://notif/<id>/act|ask?k=… a-t-il été scellé par CE téléphone (NotifLink) ? */
+  notifLinkOk?(url: string): boolean
   getPref(key: string): string | null
   setPref(key: string, value: string): void
   getInfo(): string

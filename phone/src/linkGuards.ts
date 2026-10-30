@@ -21,3 +21,16 @@ export function autoStartNonce(url: string | null): string | null {
   if (!url || !/^aura:\/\/talk\?(?:.*&)?autostart=1\b/.test(url)) return null
   return /[?&]n=([0-9a-f]{32})\b/.exec(url)?.[1] ?? null
 }
+
+// lien profond -> ancre de la PWA : aura://conv/<id> (partage, assistant) ; aura://notifs et aura://notif/<id>/act|ask
+// (boutons des notifications Android d'Aura, Notifs.kt). Revue securite du 27/10 (F1) : le schema aura:// s'ouvre depuis
+// n'importe quelle app ou page web, et `#notif-act` peut EXECUTER l'action de la notification dans la PWA. Seul un lien
+// scelle par le telephone (NotifLink.kt, `?k=`) est relaye ; sinon la liste des notifications, sans rien executer.
+export function hashOf(url: string | null, sealed?: (url: string) => boolean): string | null {
+  if (!url) return null
+  const conv = /^aura:\/\/conv\/([A-Za-z0-9_-]{1,64})/.exec(url)
+  if (conv) return `conv=${conv[1]}`
+  const notif = /^aura:\/\/notif\/([A-Za-z0-9_-]{1,64})\/(act|ask)\b/.exec(url)
+  if (notif) return sealed?.(url) ? `notif-${notif[2]}=${notif[1]}` : "notifs"
+  return /^aura:\/\/notifs\b/.test(url) ? "notifs" : null
+}

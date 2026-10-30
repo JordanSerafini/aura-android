@@ -172,14 +172,14 @@ object Notifs {
       val extras = mapOf("id" to nid, "tag" to tag, "reminder" to reminder)
       b.addAction(0, "✅ Fait", receiverIntent(ctx, reqBase + 1, ActionReceiver.ACTION_REMINDER_DONE, extras))
       b.addAction(0, "+1 h", receiverIntent(ctx, reqBase + 2, ActionReceiver.ACTION_REMINDER_SNOOZE, extras))
-      b.addAction(0, "⏰ Rappels", deepLink(ctx, reqBase + 3, "aura://notif/$nid/act"))
+      b.addAction(0, "⏰ Rappels", deepLink(ctx, reqBase + 3, NotifLink.uri(linkKey(), nid, "act")))
       b.setDeleteIntent(receiverIntent(ctx, reqBase + 4, ActionReceiver.ACTION_NOTIF_READ, mapOf("id" to nid)))
     } else if (nid != null) {
       val act = contextAction(text, category, muteKey)
       val number = if (act == ACT_CALL_BACK) callNumber(text) else null
       if (number != null) b.addAction(0, act, dialIntent(ctx, reqBase + 1, number))
-      else if (act != null) b.addAction(0, act, deepLink(ctx, reqBase + 1, "aura://notif/$nid/act"))
-      else b.addAction(0, "💬 Aura", deepLink(ctx, reqBase + 1, "aura://notif/$nid/ask"))
+      else if (act != null) b.addAction(0, act, deepLink(ctx, reqBase + 1, NotifLink.uri(linkKey(), nid, "act")))
+      else b.addAction(0, "💬 Aura", deepLink(ctx, reqBase + 1, NotifLink.uri(linkKey(), nid, "ask")))
       b.addAction(0, "🗄 Archiver", receiverIntent(ctx, reqBase + 2, ActionReceiver.ACTION_NOTIF_ARCHIVE,
         mapOf("id" to nid, "tag" to tag)))
       if (muteKey != null && severity < 3) {  // un urgent ne se coupe jamais (URGENT_SEVERITY cote bridge)
@@ -254,6 +254,16 @@ object Notifs {
       }
     }
     r.show.forEachIndexed { i, n -> showBridgeNotify(ctx, n, silent = r.silent[i]) }
+  }
+
+  private const val PREF_LINK_KEY = "notif_link_key"
+
+  /** Cle des liens scelles (NotifLink, revue du 27/10, F1) : 32 octets aleatoires crees une fois, propres a l'installation. */
+  @Synchronized fun linkKey(): ByteArray {
+    Aura.prefs.getString(PREF_LINK_KEY, null)?.let { return java.util.Base64.getDecoder().decode(it) }
+    val k = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+    Aura.prefs.edit().putString(PREF_LINK_KEY, java.util.Base64.getEncoder().encodeToString(k)).commit()
+    return k
   }
 
   fun deepLink(ctx: Context, reqCode: Int, uri: String?): PendingIntent? {

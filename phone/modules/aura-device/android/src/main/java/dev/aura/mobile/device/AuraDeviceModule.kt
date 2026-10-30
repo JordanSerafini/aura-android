@@ -207,6 +207,9 @@ class AuraDeviceModule : Module() {
     // lien aura://talk?autostart=1&n=<jeton> : le micro ne demarre que si le jeton vient de la tuile (usage unique, 30 s)
     Function("consumeTalkNonce") { n: String -> Aura.talkNonce.consume(n, System.currentTimeMillis()) }
 
+    // revue du 27/10, F1 : App.tsx ne relaie a la PWA qu'un bouton de notification scelle par CE telephone
+    Function("notifLinkOk") { url: String -> NotifLink.verify(Notifs.linkKey(), url) }
+
     Function("getPref") { key: String -> Aura.prefs.getString("js_$key", null) }
 
     Function("setPref") { key: String, value: String ->
