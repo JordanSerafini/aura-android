@@ -86,6 +86,16 @@ object UiGuard {
   }
 
   /**
+   * `notif_reply` / `notif_open` / `notif_dismiss` : la notification visee appartient-elle a une app de la liste noire ?
+   * Revue du 27/10 (N1) : screen_read et les evenements de notification l'appliquaient, pas les actions notif_* ; le bridge
+   * lisait un code OTP par notif_list, repondait ou effacait une alerte de fraude par la cle de la notification.
+   */
+  fun checkNotif(pkg: String) {
+    if (blocked(pkg)) throw ActionError("app_blocked", "Notification d'une app refusée d'office (banque, paiement, " +
+      "mots de passe, authentificateur, paramètres système, Play Store) : jamais lue ni pilotée par Aura")
+  }
+
+  /**
    * Ligne retenue pour un noeud de `screen_read` (texte, sinon description d'une feuille), ou null : noeud invisible,
    * vide ou CHAMP MOT DE PASSE (jamais emis, meme masque : sa longueur serait deja une fuite).
    */

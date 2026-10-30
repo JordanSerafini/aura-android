@@ -121,20 +121,23 @@ class AuraNotificationListener : NotificationListenerService() {
       null
     }
 
-    /** Notifications actives utiles (hors Aura, hors resumes de groupe), plus recentes d'abord. */
+    /** Notifications actives utiles (hors Aura, hors resumes de groupe, hors liste noire d'UiGuard), plus recentes d'abord. */
     fun active(): List<Info> {
       val svc = service()
       val list = try { svc.activeNotifications } catch (e: Exception) { null } ?: return emptyList()
       return list
         .filter { it.packageName != Aura.app.packageName && (it.notification.flags and Notification.FLAG_GROUP_SUMMARY) == 0 }
+        .filter { !UiGuard.blocked(it.packageName) }
         .sortedByDescending { it.postTime }
         .map { info(it) }
     }
 
     fun find(key: String): StatusBarNotification {
       val svc = service()
-      return svc.activeNotifications?.firstOrNull { it.key == key }
+      val sbn = svc.activeNotifications?.firstOrNull { it.key == key }
         ?: throw ActionError("not_found", "Notification introuvable (déjà fermée ?)")
+      UiGuard.checkNotif(sbn.packageName)
+      return sbn
     }
 
     fun reply(sbn: StatusBarNotification, text: String) {
