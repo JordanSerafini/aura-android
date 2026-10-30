@@ -112,7 +112,10 @@ class ActionExecutor {
         if (action == "ui_act") UiGuard.plan(params, UiSettings.whitelist())
         if (mustConfirm) {
           // destinataire reel (nom + numero) resolu par Contacts ; introuvable ou ambigu : affiche brut, « non résolu »
-          summary = ConfirmSummary.build(action, params) { to -> try { Contacts.resolve(to) } catch (e: Exception) { null } }
+          // revue du 27/10, N2 : notif_reply se confirme sur SA cible (app + conversation), lue sur la notification ;
+          // introuvable, protegee (N1) ou sans reponse possible : refus AVANT de deranger l'utilisateur
+          summary = if (action == "notif_reply") notifReplySummary(params)
+            else ConfirmSummary.build(action, params) { to -> try { Contacts.resolve(to) } catch (e: Exception) { null } }
           when (Aura.confirms.ask(id, action, summary, timeoutS - 3)) {
             // la pause a pu etre posee PENDANT l'attente (montre, PC, notification) : on re-verifie avant d'agir
             "accepted" -> Pause.check(action)
@@ -145,6 +148,12 @@ class ActionExecutor {
         log(action, summary, "bridge", mustConfirm, res.optBoolean("ok"), res.str("error"), ms, params)
       }
     }
+  }
+
+  private fun notifReplySummary(p: JSONObject): String {
+    val info = AuraNotificationListener.info(AuraNotificationListener.find(req(p, "key")))
+    if (info.replyAction == null) throw ActionError("unsupported", "Cette notification ne propose pas de réponse")
+    return ConfirmSummary.notifReply(info.label, info.conversation ?: info.title, p.str("text"))
   }
 
   fun onCancel(id: String) {

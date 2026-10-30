@@ -44,7 +44,7 @@ class ConfirmSummaryTest {
     assertTrue(long, long.length < 200)
     assertTrue(long, long.contains("…"))
     val sneaky = ConfirmSummary.build("notif_reply", req("text" to "ok\n\n‮evil⁦ \u0007 fin"))
-    assertEquals("Répondre à une notification : « ok evil fin »", sneaky)
+    assertEquals("Répondre dans une app : « ok evil fin »", sneaky)
     assertFalse(sneaky.any { it == '\n' || it == '‮' })
   }
 
@@ -67,5 +67,21 @@ class ConfirmSummaryTest {
     assertTrue(s, s.startsWith("Action « alarm_set » (hour = 7, label = "))
     assertTrue(s, s.endsWith(", …)"))
     assertFalse(s, s.contains("faux"))  // trie : « summary » depasse les 3 premiers
+  }
+
+  // revue securite du 27/10, N2 : la confirmation de notif_reply dit l'app et la conversation visees
+  @Test fun notif_reply_affiche_l_app_et_la_conversation() {
+    assertEquals("Répondre dans WhatsApp à « Alex » : « ok, j'arrive »", ConfirmSummary.notifReply("WhatsApp", "Alex", "ok, j'arrive"))
+    assertEquals("Répondre dans Signal : « oui »", ConfirmSummary.notifReply("Signal", "  ", "oui"))
+    val s = ConfirmSummary.notifReply("Whats\u202EApp", "Ma\u0000man\n", "x")
+    assertTrue(s, s.startsWith("Répondre dans WhatsApp à « Ma man » : "))
+  }
+
+  @Test fun notif_reply_la_cible_est_resolue_sur_le_telephone_avant_la_confirmation() {
+    val ex = java.io.File("src/main/java/dev/aura/mobile/device/ActionExecutor.kt").readText()
+    val ask = ex.indexOf("Aura.confirms.ask(")
+    val resolve = ex.indexOf("notifReplySummary(params)")
+    assertTrue("notif_reply : resume local resolu AVANT confirms.ask", resolve in 0 until ask)
+    assertTrue(Regex("""fun notifReplySummary[\s\S]{0,400}AuraNotificationListener\.find\(""").containsMatchIn(ex))
   }
 }

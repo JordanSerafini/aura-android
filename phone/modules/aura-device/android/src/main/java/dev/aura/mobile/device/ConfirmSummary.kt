@@ -46,10 +46,21 @@ object ConfirmSummary {
     "sms_send" -> "Envoyer un SMS à ${recipient(p.str("to"), r)} : ${quote(p.str("text"))}"
     "call" -> "Appeler ${recipient(p.str("to"), r)}"
     "camera_snap" -> "Prendre une photo (caméra ${if (p.str("facing") == "front") "avant" else "arrière"})"
-    "notif_reply" -> "Répondre à une notification : ${quote(p.str("text"))}"
+    // la cible (app + conversation) se lit sur la notification, pas dans params : ActionExecutor passe par notifReply
+    "notif_reply" -> notifReply(null, null, p.str("text"))
     "message_send" -> "Envoyer un message ${clean(p.str("app"), 20)} à ${recipient(p.str("to"), r)} : ${quote(p.str("text"))}"
     "ui_act" -> uiAct(p)
     else -> generic(action, p)
+  }
+
+  /**
+   * notif_reply (revue securite du 27/10, N2) : l'app et la conversation (ou le titre) de la notification REELLEMENT
+   * visee par params.key, resolues sur le telephone avant la confirmation (ActionExecutor.notifReplySummary).
+   */
+  fun notifReply(app: String?, target: String?, text: String?): String {
+    val a = clean(app, 40).ifEmpty { "une app" }
+    val t = clean(target, RECIPIENT_MAX)
+    return "Répondre dans $a" + (if (t.isEmpty()) "" else " à « $t »") + " : ${quote(text)}"
   }
 
   private fun uiAct(p: JSONObject): String {
