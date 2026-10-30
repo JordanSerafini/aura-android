@@ -3,38 +3,46 @@ package dev.aura.mobile.device
 import androidx.core.app.NotificationCompat
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
  * Confirmations (action_request.confirm) : notification heads-up + ecran de l'app + carte sur la montre.
- * La premiere reponse gagne ; les autres surfaces recoivent l'annulation.
+ * La premiere reponse gagne ; les autres surfaces recoivent l'annulation. Un `action_id` deja en attente est refuse
+ * (revue du 27/10, N4 : IdTable), et « Accepter » d'une notification ne vaut que pour SA carte (`notif_id`).
  */
 class ConfirmManager {
+  companion object {
+    /** `ask` : un `action_id` deja en attente de reponse (N4) ; l'appelant refuse la demande. */
+    const val DUPLICATE = "duplicate"
+  }
+
   class Pending(val id: String, val action: String, val summary: String, val deadline: Long, val notifId: Int) {
     val latch = CountDownLatch(1)
     @Volatile var outcome: String? = null
   }
 
-  private val pending = ConcurrentHashMap<String, Pending>()
+  private val pending = IdTable<Pending>()
 
-  /** Bloque jusqu'a la reponse. Rend accepted | refused | timeout | cancelled. */
+  /** Bloque jusqu'a la reponse. Rend accepted | refused | timeout | cancelled, ou DUPLICATE sans rien afficher. */
   fun ask(id: String, action: String, summary: String, timeoutS: Int): String {
     val wait = timeoutS.coerceIn(5, 600)
     val p = Pending(id, action, summary, System.currentTimeMillis() + wait * 1000L, Notifs.newId())
-    pending[id] = p
+    if (!pending.claim(id, p)) return DUPLICATE
     showNotification(p, wait)
     Aura.watch.sendToWatches("/aura/confirm_request",
       JSONObject().put("action_id", id).put("summary", summary).put("timeout_s", wait))
     emit()
-    if (!p.latch.await(wait.toLong(), TimeUnit.SECONDS)) resolve(id, "timeout", "delai")
+    if (!p.latch.await(wait.toLong(), TimeUnit.SECONDS)) resolve(id, "timeout", "delai", p.notifId)
     return p.outcome ?: "timeout"
   }
 
-  /** false si deja reglee ailleurs (premiere reponse gagnante). */
-  fun resolve(id: String, outcome: String, source: String): Boolean {
-    val p = pending.remove(id) ?: return false
+  /**
+   * false si deja reglee ailleurs (premiere reponse gagnante). `notifId` : la reponse vient d'une carte precise
+   * (notification, echeance) et ne regle que la demande que cette carte portait.
+   */
+  fun resolve(id: String, outcome: String, source: String, notifId: Int? = null): Boolean {
+    val p = (if (notifId == null) pending.take(id) else pending.takeIf(id) { it.notifId == notifId }) ?: return false
     // la montre repond ok:false quand SA minuterie expire (PROTOCOL.md §6) : pres de l'echeance, c'est un
     // delai depasse, pas un refus de l'utilisateur (Aura ne doit pas lire « il a dit non »)
     p.outcome = if (source == "watch" && outcome == "refused" && System.currentTimeMillis() >= p.deadline - 1500) "timeout"
@@ -50,7 +58,7 @@ class ConfirmManager {
 
   fun count(): Int = pending.size
 
-  fun listJson(): String = JSONArray(pending.values.sortedBy { it.deadline }.map {
+  fun listJson(): String = JSONArray(pending.values().sortedBy { it.deadline }.map {
     JSONObject().put("action_id", it.id).put("action", it.action).put("summary", it.summary).put("deadline", it.deadline)
   }).toString()
 
@@ -61,8 +69,9 @@ class ConfirmManager {
 
   private fun showNotification(p: Pending, waitS: Int) {
     val ctx = Aura.app
-    val ok = Notifs.receiverIntent(ctx, p.notifId * 2, ActionReceiver.ACTION_CONFIRM_OK, mapOf("action_id" to p.id))
-    val no = Notifs.receiverIntent(ctx, p.notifId * 2 + 1, ActionReceiver.ACTION_CONFIRM_NO, mapOf("action_id" to p.id))
+    val card = mapOf("action_id" to p.id, "notif_id" to p.notifId.toString())
+    val ok = Notifs.receiverIntent(ctx, p.notifId * 2, ActionReceiver.ACTION_CONFIRM_OK, card)
+    val no = Notifs.receiverIntent(ctx, p.notifId * 2 + 1, ActionReceiver.ACTION_CONFIRM_NO, card)
     val b = NotificationCompat.Builder(ctx, Notifs.CH_CONFIRM)
       .setSmallIcon(R.drawable.ic_aura)
       .setContentTitle("Aura demande ton accord")

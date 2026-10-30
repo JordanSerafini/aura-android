@@ -51,7 +51,6 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -62,7 +61,7 @@ class ActionExecutor {
     @Volatile var cancelled = false
   }
 
-  private val running = ConcurrentHashMap<String, Running>()
+  private val running = IdTable<Running>()
   /** La demande en cours sur ce thread a-t-elle ete confirmee par l'utilisateur ? (envoi WhatsApp par accessibilite) */
   private val confirmed = ThreadLocal.withInitial { false }
   private val ctx: Context get() = Aura.app
@@ -92,7 +91,15 @@ class ActionExecutor {
     // intrusives (UiGuard.ALWAYS_CONFIRM : sms_send, call, camera_snap, notif_reply, message_send) se confirment toujours
     val mustConfirm = confirm || UiGuard.needsConfirm(action, params)
     val r = Running(id)
-    running[id] = r
+    // revue du 27/10, N4 : un action_id deja en cours est refuse, sans rien executer ni demander de confirmation
+    // (l'ecraser laissait « Accepter » sur la carte de la 1re demande valider la 2e)
+    if (!running.claim(id, r)) {
+      val dup = JSONObject().put("type", "action_result").put("action_id", id)
+      fail(dup, "duplicate_id", "action_id déjà en cours sur le téléphone : demande refusée", null)
+      Aura.bridge.send(dup)
+      log(action, summary, "bridge", mustConfirm, false, "duplicate_id", 0L, params)
+      return
+    }
     Aura.pool.execute {
       val t0 = System.currentTimeMillis()
       val res = JSONObject().put("type", "action_result").put("action_id", id)
@@ -111,6 +118,7 @@ class ActionExecutor {
             "accepted" -> Pause.check(action)
             "refused" -> throw ActionError("refused", "L'utilisateur a refusé")
             "cancelled" -> r.cancelled = true
+            ConfirmManager.DUPLICATE -> throw ActionError("duplicate_id", "Une confirmation porte déjà cet action_id")
             else -> throw ActionError("timeout", "Pas de réponse à la demande de confirmation")
           }
         }
@@ -128,7 +136,7 @@ class ActionExecutor {
         Log.w(Aura.TAG, "action $action en echec", e)
         fail(res, "failed", "${e.javaClass.simpleName} : ${e.message}", null)
       }
-      running.remove(id)
+      running.release(id, r)
       val ms = System.currentTimeMillis() - t0
       if (r.cancelled) {
         log(action, summary, "bridge", mustConfirm, false, "annulée par le bridge", ms, params)

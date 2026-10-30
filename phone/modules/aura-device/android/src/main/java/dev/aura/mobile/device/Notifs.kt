@@ -317,7 +317,9 @@ class ActionReceiver : BroadcastReceiver() {
     when (intent.action) {
       ACTION_CONFIRM_OK, ACTION_CONFIRM_NO -> {
         val id = intent.getStringExtra("action_id") ?: return
-        Aura.confirms.resolve(id, if (intent.action == ACTION_CONFIRM_OK) "accepted" else "refused", "notification")
+        // notif_id : ce bouton ne regle que la demande de SA carte (revue du 27/10, N4)
+        val card = intent.getStringExtra("notif_id")?.toIntOrNull() ?: return
+        Aura.confirms.resolve(id, if (intent.action == ACTION_CONFIRM_OK) "accepted" else "refused", "notification", card)
       }
       ACTION_FIND_STOP -> FindPhone.stop()
       ACTION_NOTIF_READ -> intent.getStringExtra("id")?.let { Notifs.sendNotifState(it, read = true) }
