@@ -83,8 +83,13 @@ class ConfirmManager {
       .setAutoCancel(false)
       .setTimeoutAfter(waitS * 1000L)
       .setContentIntent(Notifs.launchAppIntent(ctx))
+      // revue du 27/10, N5 : ecran verrouille, ni le resume (texte du SMS, destinataire) ni « Accepter » sans deverrouiller ;
+      // « Refuser » reste touchable (refuser n'engage rien)
+      .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+      .setPublicVersion(NotificationCompat.Builder(ctx, Notifs.CH_CONFIRM).setSmallIcon(R.drawable.ic_aura)
+        .setContentTitle("Aura demande ton accord").setContentText("Déverrouille pour voir et répondre").build())
       .addAction(0, "Refuser", no)
-      .addAction(0, "Accepter", ok)
+      .addAction(NotificationCompat.Action.Builder(0, "Accepter", ok).setAuthenticationRequired(true).build())
     Notifs.post(ctx, p.notifId, b)
   }
 }
