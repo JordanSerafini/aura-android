@@ -8,7 +8,7 @@ import type { ShouldStartLoadRequest } from "react-native-webview/lib/WebViewTyp
 import { DEVICE_TOKEN, POSTE, PWA_ORIGIN, PWA_URL, theme } from "../config"
 import { AuraDevice } from "../native"
 import { Button } from "../ui"
-import { isPwaUrlOf, splitUrl } from "../linkGuards"
+import { externalUrl, isPwaUrlOf, splitUrl } from "../linkGuards"
 
 const PAIRED_KEY = "pwa_paired"
 
@@ -230,7 +230,7 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
     if (isPwaUrl(u) || u.startsWith("about:") || u.startsWith("data:") || u.startsWith("blob:")) return true
     // liens http(s) hors domaine, mailto:, tel: : appli du systeme ; tout autre schema (intent:, sms:, market:, file:,
     // obsidian:...) est ignore, sans rien ouvrir
-    if (isExternalLink(u)) Linking.openURL(u).catch(() => {})
+    if (isExternalLink(u)) Linking.openURL(externalUrl(u)).catch(() => {})  // sans le jeton d'appairage herite (F2)
     return false
   }, [])
 

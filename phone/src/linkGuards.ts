@@ -34,3 +34,10 @@ export function hashOf(url: string | null, sealed?: (url: string) => boolean): s
   if (notif) return sealed?.(url) ? `notif-${notif[2]}=${notif[1]}` : "notifs"
   return /^aura:\/\/notifs\b/.test(url) ? "notifs" : null
 }
+
+// F2 (revue securite du 27/10) : au 1er lancement la WebView charge `PWA_URL#pair=<jeton>&name=…`. Une redirection hors
+// origine SANS fragment dans `Location` herite de ce fragment (RFC 9110 §10.2.2) : le lien externe ouvert dans le
+// navigateur emporterait le jeton de l'appareil. Un fragment qui porte `pair=` est retire ; les autres ancres restent.
+export function externalUrl(url: string): string {
+  return /#.*\bpair=/i.test(url) ? url.replace(/#.*$/, "") : url
+}
