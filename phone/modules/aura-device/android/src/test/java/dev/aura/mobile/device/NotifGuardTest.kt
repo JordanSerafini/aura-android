@@ -35,5 +35,11 @@ class NotifGuardTest {
     val find = src.substringAfter("fun find(key: String)").substringBefore("fun reply(")
     assertTrue("notif_list : active() filtre UiGuard.blocked", active.contains("UiGuard.blocked(it.packageName)"))
     assertTrue("notif_reply/open/dismiss : find() appelle UiGuard.checkNotif", find.contains("UiGuard.checkNotif(sbn.packageName)"))
+    // Contre-expertise du 30/10 : un appel mis en commentaire laissait le texte dans la source et le test vert.
+    val code = src.lines().filterNot { it.trimStart().startsWith("//") }.joinToString("\n")
+    assertTrue("appel de checkNotif commenté dans find()", code.substringAfter("fun find(key: String)").substringBefore("fun reply(")
+      .contains("UiGuard.checkNotif(sbn.packageName)"))
+    // Seules active() et find() lisent les notifications des autres apps : une 3e lecture contournerait la liste noire
+    assertEquals("lectures de activeNotifications hors active()/find()", 2, Regex("\\.activeNotifications\\b").findAll(code).count())
   }
 }
