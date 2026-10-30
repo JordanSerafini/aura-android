@@ -62,12 +62,17 @@ object Pause {
     expiry = Aura.timer.schedule(Runnable { expire() }, delayMs, TimeUnit.MILLISECONDS)
   }
 
-  /** Echeance atteinte : on repasse a `off` localement ; le bridge fait la meme chose et le diffuse. */
+  /**
+   * Echeance atteinte : on repasse a `off` localement (le bridge fait la meme chose et le diffuse), ou au plancher pose
+   * sur le telephone s'il tient encore (N3 : une pause plus stricte venue du PC est finie, pas celle du telephone).
+   */
   private fun expire() {
     val st = state()
     if (st.mode == PauseMode.OFF || st.until <= 0L || nowS() < st.until) return
-    save(PauseState(PauseMode.OFF, 0L, "expiration", System.currentTimeMillis(), pending = false))
-    Log.i(Aura.TAG, "pause echue : reprise")
+    val next = PauseLogic.afterExpiry(st, nowS())
+    save(next.copy(changedAt = System.currentTimeMillis(), pending = false))
+    Log.i(Aura.TAG, if (next.mode == PauseMode.OFF) "pause echue : reprise" else "pause echue : retour a la pause du telephone")
+    if (next.mode != PauseMode.OFF) sendToBridge(next)
     changed()
   }
 
@@ -77,7 +82,8 @@ object Pause {
    */
   fun set(mode: String, untilS: Long, by: String): PauseState {
     val (m, until) = PauseLogic.normalize(mode, untilS, nowS())
-    val st = PauseState(m, until, by, System.currentTimeMillis(), pending = !bridgeUnsupported)
+    // geste sur le telephone : plancher que le bridge ne peut ni lever ni adoucir (N3) ; une reprise locale l'efface
+    val st = PauseLogic.localSet(m, until, by, System.currentTimeMillis(), pending = !bridgeUnsupported)
     save(st)
     Usage.count(if (m == PauseMode.OFF) "pause.levee" else "pause.activee")
     sendToBridge(st)
@@ -95,12 +101,28 @@ object Pause {
     return Aura.bridge.send(msg)
   }
 
-  /** `pause_state` du bridge (changement, expiration, autre appareil) : applique tel quel. */
+  /**
+   * `pause_state` du bridge (changement, expiration, autre appareil). Revue du 27/10, N3 : il ne descend jamais sous
+   * la pause posee sur le telephone (PauseLogic.adoptable) ; s'il essaie, le telephone lui renvoie sa pause.
+   */
   fun onBridge(msg: JSONObject) {
     val remote = PauseLogic.fromMessage(msg) ?: return
+    adoptRemote(remote, System.currentTimeMillis())
+  }
+
+  @Volatile private var lastPushBackMs = 0L
+
+  private fun adoptRemote(remote: PauseState, atMs: Long) {
     val now = nowS()
     val effective = if (remote.active(now)) remote else PauseState(PauseMode.OFF, 0L, remote.by)
-    adopt(effective, System.currentTimeMillis())
+    val next = PauseLogic.adoptable(state(), remote, now)
+    adopt(next, atMs)
+    if (PauseLogic.sameAs(next, effective, now)) return
+    Log.w(Aura.TAG, "pause du bridge (${effective.mode}) sous la pause du telephone (${next.mode}) : refusee, renvoyee")
+    val t = System.currentTimeMillis()
+    if (t - lastPushBackMs < 10_000L) return  // un bridge qui insiste ne fait pas tourner une boucle de pause_set
+    lastPushBackMs = t
+    sendToBridge(next)
   }
 
   /** `welcome` : l'etat du bridge, ou notre changement hors ligne qui l'emporte (dernier changement gagne). */
@@ -120,8 +142,7 @@ object Pause {
     }
     when (PauseLogic.reconcile(local, stamp)) {
       PauseLogic.Decision.PUSH_LOCAL -> sendToBridge(local)
-      PauseLogic.Decision.ADOPT_REMOTE ->
-        adopt(if (remote.active(now)) remote else PauseState(PauseMode.OFF, 0L, remote.by), stamp ?: System.currentTimeMillis())
+      PauseLogic.Decision.ADOPT_REMOTE -> adoptRemote(remote, stamp ?: System.currentTimeMillis())
     }
   }
 

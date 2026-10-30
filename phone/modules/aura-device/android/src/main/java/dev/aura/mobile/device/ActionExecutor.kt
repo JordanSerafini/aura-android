@@ -51,7 +51,6 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -62,7 +61,7 @@ class ActionExecutor {
     @Volatile var cancelled = false
   }
 
-  private val running = ConcurrentHashMap<String, Running>()
+  private val running = IdTable<Running>()
   /** La demande en cours sur ce thread a-t-elle ete confirmee par l'utilisateur ? (envoi WhatsApp par accessibilite) */
   private val confirmed = ThreadLocal.withInitial { false }
   private val ctx: Context get() = Aura.app
@@ -92,7 +91,14 @@ class ActionExecutor {
     // intrusives (UiGuard.ALWAYS_CONFIRM : sms_send, call, camera_snap, notif_reply, message_send) se confirment toujours
     val mustConfirm = confirm || UiGuard.needsConfirm(action, params)
     val r = Running(id)
-    running[id] = r
+    // revue du 27/10, N4 : un action_id deja en cours est refuse, sans rien executer ni demander de confirmation
+    // (l'ecraser laissait « Accepter » sur la carte de la 1re demande valider la 2e)
+    // AUCUN action_result pour le doublon : il porterait l'id de l'action vivante et le serveur la croirait finie en
+    // echec alors qu'elle attend encore sa confirmation (son vrai resultat serait ignore) ; journal seul
+    if (!running.claim(id, r)) {
+      log(action, summary, "bridge", mustConfirm, false, "duplicate_id", 0L, params)
+      return
+    }
     Aura.pool.execute {
       val t0 = System.currentTimeMillis()
       val res = JSONObject().put("type", "action_result").put("action_id", id)
@@ -105,12 +111,16 @@ class ActionExecutor {
         if (action == "ui_act") UiGuard.plan(params, UiSettings.whitelist())
         if (mustConfirm) {
           // destinataire reel (nom + numero) resolu par Contacts ; introuvable ou ambigu : affiche brut, « non résolu »
-          summary = ConfirmSummary.build(action, params) { to -> try { Contacts.resolve(to) } catch (e: Exception) { null } }
+          // revue du 27/10, N2 : notif_reply se confirme sur SA cible (app + conversation), lue sur la notification ;
+          // introuvable, protegee (N1) ou sans reponse possible : refus AVANT de deranger l'utilisateur
+          summary = if (action == "notif_reply") notifReplySummary(params)
+            else ConfirmSummary.build(action, params) { to -> try { Contacts.resolve(to) } catch (e: Exception) { null } }
           when (Aura.confirms.ask(id, action, summary, timeoutS - 3)) {
             // la pause a pu etre posee PENDANT l'attente (montre, PC, notification) : on re-verifie avant d'agir
             "accepted" -> Pause.check(action)
             "refused" -> throw ActionError("refused", "L'utilisateur a refusé")
             "cancelled" -> r.cancelled = true
+            ConfirmManager.DUPLICATE -> throw ActionError("duplicate_id", "Une confirmation porte déjà cet action_id")
             else -> throw ActionError("timeout", "Pas de réponse à la demande de confirmation")
           }
         }
@@ -128,7 +138,7 @@ class ActionExecutor {
         Log.w(Aura.TAG, "action $action en echec", e)
         fail(res, "failed", "${e.javaClass.simpleName} : ${e.message}", null)
       }
-      running.remove(id)
+      running.release(id, r)
       val ms = System.currentTimeMillis() - t0
       if (r.cancelled) {
         log(action, summary, "bridge", mustConfirm, false, "annulée par le bridge", ms, params)
@@ -137,6 +147,12 @@ class ActionExecutor {
         log(action, summary, "bridge", mustConfirm, res.optBoolean("ok"), res.str("error"), ms, params)
       }
     }
+  }
+
+  private fun notifReplySummary(p: JSONObject): String {
+    val info = AuraNotificationListener.info(AuraNotificationListener.find(req(p, "key")))
+    if (info.replyAction == null) throw ActionError("unsupported", "Cette notification ne propose pas de réponse")
+    return ConfirmSummary.notifReply(info.label, info.conversation ?: info.title, p.str("text"))
   }
 
   fun onCancel(id: String) {
@@ -223,7 +239,7 @@ class ActionExecutor {
       JSONObject().put("mode", Launcher.start(Intent(Intent.ACTION_VIEW, Uri.parse(url)), url))
     }
     "navigate" -> navigate(req(p, "destination"), p.str("mode"))
-    "clipboard_set" -> { clipboard().setPrimaryClip(ClipData.newPlainText("Aura", req(p, "text"))); null }
+    "clipboard_set" -> { val t = req(p, "text"); if (t.length > ClipGuard.CLIP_MAX) throw ActionError("too_long", "Texte trop long pour le presse-papiers (${t.length} > ${ClipGuard.CLIP_MAX} car.)"); clipboard().setPrimaryClip(ClipData.newPlainText("Aura", t)); null }
     "clipboard_get" -> clipboardGet()
     "email_compose" -> emailCompose(req(p, "to"), p.str("subject").orEmpty(), p.str("body").orEmpty())
     "speak" -> { Speaker.speak(req(p, "text")); null }

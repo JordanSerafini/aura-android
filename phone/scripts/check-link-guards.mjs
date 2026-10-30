@@ -7,7 +7,7 @@ import { createRequire } from "node:module"
 const ts = createRequire(import.meta.url)("typescript")
 const src = readFileSync(new URL("../src/linkGuards.ts", import.meta.url), "utf8")
 const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText
-const { autoStartNonce, isPwaUrlOf, splitUrl } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"))
+const { autoStartNonce, externalUrl, hashOf, isPwaUrlOf, splitUrl } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"))
 
 const O = "https://aura.example.org"
 // isPwaUrl : origine EGALE
@@ -32,4 +32,24 @@ for (const bad of [
   "aura://conv/abc?autostart=1&n=" + N, "https://x.example/talk?autostart=1&n=" + N, "aura://talkx?autostart=1&n=" + N,
   "aura://talk?autostart=10&n=" + N,
 ]) assert.equal(autoStartNonce(bad), null, "pas d'autostart : " + JSON.stringify(bad))
+// F1 (revue securite du 27/10) : seul un bouton de notification scelle par le telephone devient #notif-act / #notif-ask
+const K = "?k=0123456789abcdef0123456789abcdef"
+const sealed = (u) => u.endsWith(K)
+assert.equal(hashOf("aura://notif/7ad617618602/act" + K, sealed), "notif-act=7ad617618602")
+assert.equal(hashOf("aura://notif/7ad617618602/ask" + K, sealed), "notif-ask=7ad617618602")
+for (const forged of ["aura://notif/7ad617618602/act", "aura://notif/7ad617618602/act?k=ffffffffffffffffffffffffffffffff", "aura://notif/x/ask"]) {
+  assert.equal(hashOf(forged, sealed), "notifs", "lien d'une autre app : la liste seulement : " + forged)
+}
+assert.equal(hashOf("aura://notif/7ad617618602/act" + K, undefined), "notifs")
+assert.equal(hashOf("aura://conv/abc_12", () => false), "conv=abc_12")
+assert.equal(hashOf("aura://notifs", () => false), "notifs")
+assert.equal(hashOf("aura://talk", () => false), null)
+// F2 (revue securite du 27/10) : le jeton d'appairage herite d'une redirection ne part pas dans le navigateur
+assert.equal(externalUrl("https://sso.example.com/login#pair=SECRET&name=phone"), "https://sso.example.com/login")
+assert.equal(externalUrl("https://other.example/app/?x=1#name=p&pair=SECRET"), "https://other.example/app/?x=1")
+assert.equal(externalUrl("https://outlook.office.com/mail/#/inbox"), "https://outlook.office.com/mail/#/inbox")
+assert.equal(externalUrl("mailto:someone@example.com"), "mailto:someone@example.com")
+const screen = readFileSync(new URL("../src/screens/AuraScreen.tsx", import.meta.url), "utf8")
+assert.match(screen, /Linking\.openURL\(externalUrl\(u\)\)/, "AuraScreen ouvre les liens externes par externalUrl")
+assert.doesNotMatch(screen, /Linking\.openURL\(u\)/)
 console.log("link-guards : OK")

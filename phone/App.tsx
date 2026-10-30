@@ -15,7 +15,7 @@ import ConfirmSheet from "./src/ConfirmSheet"
 import SettingsScreen from "./src/screens/SettingsScreen"
 import TalkScreen from "./src/screens/TalkScreen"
 import WatchScreen from "./src/screens/WatchScreen"
-import { autoStartNonce } from "./src/linkGuards"
+import { autoStartNonce, hashOf } from "./src/linkGuards"
 
 // Réglages accepte une section : « Contrôle d'apps » ouvre Réglages en défilant jusqu'à sa carte (nav.ts)
 type Tabs = { Aura: undefined, Téléphone: undefined, Actions: undefined, Montre: undefined, Réglages: SettingsParams }
@@ -72,17 +72,6 @@ function wantsAutoStart(url: string | null): boolean {
   const nonce = autoStartNonce(url)
   return !!nonce && AuraDevice.consumeTalkNonce(nonce)
 }
-// lien profond -> ancre de la PWA : aura://conv/<id> (partage, assistant) ; aura://notifs et
-// aura://notif/<id>/act|ask (boutons des notifications Android d'Aura, Notifs.kt)
-function hashOf(url: string | null): string | null {
-  if (!url) return null
-  const conv = /^aura:\/\/conv\/([A-Za-z0-9_-]{1,64})/.exec(url)
-  if (conv) return `conv=${conv[1]}`
-  const notif = /^aura:\/\/notif\/([A-Za-z0-9_-]{1,64})\/(act|ask)\b/.exec(url)
-  if (notif) return `notif-${notif[2]}=${notif[1]}`
-  return /^aura:\/\/notifs\b/.test(url) ? "notifs" : null
-}
-
 export default function App() {
   const confirms = useConfirms()
   const [talk, setTalk] = useState(false)
@@ -104,7 +93,7 @@ export default function App() {
   useEffect(() => {
     const route = (u: string | null) => {
       if (wantsTalk(u)) openTalk(wantsAutoStart(u))
-      const hash = hashOf(u)
+      const hash = hashOf(u, (x) => !!AuraDevice.notifLinkOk?.(x))  // F1 : bouton de notification scellé par le téléphone
       if (hash) {
         setTalk(false)
         setOpenHash((prev) => ({ hash, n: (prev?.n ?? 0) + 1 }))

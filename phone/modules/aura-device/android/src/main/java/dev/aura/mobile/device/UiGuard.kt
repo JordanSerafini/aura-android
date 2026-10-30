@@ -117,8 +117,13 @@ object UiGuard {
   /** ui_act tap / type : le geste qui peut valider ou envoyer quelque chose dans une app. */
   fun isUiOutgoing(action: String, p: JSONObject): Boolean = action == "ui_act" && p.optString("op").trim() in OUTGOING_OPS  // meme trim que plan
 
-  /** Plancher LOCAL de confirmation : l'app ne fait que durcir la decision du bridge, jamais l'assouplir. */
-  fun needsConfirm(action: String, p: JSONObject): Boolean = action in ALWAYS_CONFIRM || isUiOutgoing(action, p)
+  /**
+   * Plancher LOCAL de confirmation : l'app ne fait que durcir la decision du bridge, jamais l'assouplir. clipboard_set
+   * s'y ajoute pour un texte de paiement seulement (revue du 27/10, N8, ClipGuard) ; notif_dismiss n'y est pas (fermeture
+   * du bruit en lot) mais refuse une app de la liste noire (AuraNotificationListener.find).
+   */
+  fun needsConfirm(action: String, p: JSONObject): Boolean = action in ALWAYS_CONFIRM || isUiOutgoing(action, p) ||
+    (action == "clipboard_set" && ClipGuard.payment(p.optString("text")))
 
   /** Liste blanche saisie / relue : minuscules, forme de paquet, JAMAIS un paquet de la liste noire, sans doublon. */
   fun normalize(list: Collection<String>): List<String> =
