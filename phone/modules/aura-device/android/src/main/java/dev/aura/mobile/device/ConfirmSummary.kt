@@ -49,9 +49,13 @@ object ConfirmSummary {
     // la cible (app + conversation) se lit sur la notification, pas dans params : ActionExecutor passe par notifReply
     "notif_reply" -> notifReply(null, null, p.str("text"))
     "message_send" -> "Envoyer un message ${clean(p.str("app"), 20)} à ${recipient(p.str("to"), r)} : ${quote(p.str("text"))}"
+    "clipboard_set" -> clipboard(p.str("text"))
     "ui_act" -> uiAct(p)
     else -> generic(action, p)
   }
+
+  /** clipboard_set confirme (texte de paiement, N8) : ce qui sera REELLEMENT copie, et sa longueur. */
+  fun clipboard(text: String?): String = "Copier dans le presse-papiers : ${quote(text)} (${(text ?: "").length} car.)"
 
   /**
    * notif_reply (revue securite du 27/10, N2) : l'app et la conversation (ou le titre) de la notification REELLEMENT

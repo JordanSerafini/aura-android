@@ -240,7 +240,7 @@ class ActionExecutor {
       JSONObject().put("mode", Launcher.start(Intent(Intent.ACTION_VIEW, Uri.parse(url)), url))
     }
     "navigate" -> navigate(req(p, "destination"), p.str("mode"))
-    "clipboard_set" -> { clipboard().setPrimaryClip(ClipData.newPlainText("Aura", req(p, "text"))); null }
+    "clipboard_set" -> { val t = req(p, "text"); if (t.length > ClipGuard.CLIP_MAX) throw ActionError("too_long", "Texte trop long pour le presse-papiers (${t.length} > ${ClipGuard.CLIP_MAX} car.)"); clipboard().setPrimaryClip(ClipData.newPlainText("Aura", t)); null }
     "clipboard_get" -> clipboardGet()
     "email_compose" -> emailCompose(req(p, "to"), p.str("subject").orEmpty(), p.str("body").orEmpty())
     "speak" -> { Speaker.speak(req(p, "text")); null }
