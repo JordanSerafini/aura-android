@@ -14,6 +14,9 @@ import java.time.format.DateTimeFormatter
  *  - all  : toute action sur le telephone refusee sauf device_status, et plus aucun phone_event envoye.
  *
  * Le bridge est l'autorite cote serveur ; l'app applique l'etat LOCALEMENT, meme hors ligne.
+ * Revue securite du 27/10 (N3) : une pause posee par un geste SUR le telephone (notification, ecran Appareil, montre)
+ * est un PLANCHER (`floorMode`, `floorUntil`) : un etat venu du bridge peut la durcir ou l'allonger, jamais la lever ni
+ * l'adoucir avant son echeance (`adoptable`). Une pause posee depuis un PC se leve depuis un PC.
  */
 object PauseMode {
   const val OFF = "off"
@@ -33,6 +36,9 @@ data class PauseState(
   val by: String = "",
   val changedAt: Long = 0L,
   val pending: Boolean = false,
+  /** Plancher pose par le dernier geste local (N3) : `off` = aucun. Jamais lu dans un message du bridge. */
+  val floorMode: String = PauseMode.OFF,
+  val floorUntil: Long = 0L,
 ) {
   fun active(nowS: Long): Boolean = mode != PauseMode.OFF && (until <= 0L || nowS < until)
 
@@ -41,7 +47,7 @@ data class PauseState(
 
   /** Forme stockee (prefs). */
   fun toJson(): JSONObject = JSONObject().put("mode", mode).put("until", until).put("by", by)
-    .put("changed_at", changedAt).put("pending", pending)
+    .put("changed_at", changedAt).put("pending", pending).put("floor_mode", floorMode).put("floor_until", floorUntil)
 
   /** Forme du protocole (pause_state, /aura/status) : l'etat EN VIGUEUR a `nowS`. */
   fun toWire(nowS: Long): JSONObject {
@@ -59,6 +65,8 @@ data class PauseState(
         by = j.optString("by", "").take(40),
         changedAt = j.optLong("changed_at", 0L),
         pending = j.optBoolean("pending", false),
+        floorMode = j.optString("floor_mode", PauseMode.OFF).let { if (PauseMode.valid(it)) it else PauseMode.OFF },
+        floorUntil = j.optLong("floor_until", 0L).coerceAtLeast(0L),
       )
     }
   }
@@ -94,6 +102,54 @@ object PauseLogic {
     if (!blocksEvents(mode)) return items to emptyList()
     return items.partition { it.optString("type") != "phone_event" }
   }
+
+  // ─── Plancher local (revue securite du 27/10, N3) ───────────────────────
+
+  /** A moins de 2 min de son echeance, le plancher cede : renvoyer au bridge un `until` deja passe pour lui (horloges) ne sert a rien. */
+  const val FLOOR_SLACK_S = 120L
+  const val FLOOR_BY = "téléphone"
+
+  fun rank(mode: String): Int = when (mode) {
+    PauseMode.ALL -> 2
+    PauseMode.APPS -> 1
+    else -> 0
+  }
+
+  /** Etat d'un geste local (notification, ecran Appareil, montre) : il devient le plancher ; une reprise locale l'efface. */
+  fun localSet(mode: String, until: Long, by: String, atMs: Long, pending: Boolean = false): PauseState =
+    PauseState(mode, until, by, atMs, pending, floorMode = mode, floorUntil = if (mode == PauseMode.OFF) 0L else until)
+
+  fun floorActive(st: PauseState, nowS: Long): Boolean =
+    st.floorMode != PauseMode.OFF && (st.floorUntil <= 0L || nowS < st.floorUntil - FLOOR_SLACK_S)
+
+  /** `remote` (deja ramene a son mode en vigueur) couvre-t-il le plancher : plus strict, ou aussi strict et au moins aussi long ? */
+  private fun covers(remote: PauseState, floorMode: String, floorUntil: Long): Boolean {
+    val r = rank(remote.mode)
+    val f = rank(floorMode)
+    if (r != f) return r > f
+    if (floorUntil <= 0L) return remote.until <= 0L
+    return remote.until <= 0L || remote.until >= floorUntil
+  }
+
+  /**
+   * Ce que le telephone garde d'un etat venu du bridge (`pause_state`, `welcome`). Sans plancher actif, le bridge fait
+   * foi. Avec un plancher, l'etat distant n'est pris que s'il le couvre ; sinon on garde le plancher, et Pause.kt le
+   * renvoie au bridge (les autres appareils voient alors la pause du telephone). Le plancher suit l'etat adopte.
+   */
+  fun adoptable(local: PauseState, remote: PauseState, nowS: Long): PauseState {
+    val eff = if (remote.active(nowS)) remote else PauseState(PauseMode.OFF, 0L, remote.by)
+    if (!floorActive(local, nowS)) return eff.copy(floorMode = PauseMode.OFF, floorUntil = 0L)
+    if (covers(eff, local.floorMode, local.floorUntil)) return eff.copy(floorMode = local.floorMode, floorUntil = local.floorUntil)
+    return floorState(local)
+  }
+
+  /** Echeance de l'etat en vigueur : on retombe sur le plancher s'il tient encore, sinon `off`. */
+  fun afterExpiry(st: PauseState, nowS: Long): PauseState =
+    if (floorActive(st, nowS) && rank(st.floorMode) > 0) floorState(st)
+    else PauseState(PauseMode.OFF, 0L, "expiration")
+
+  private fun floorState(st: PauseState) =
+    PauseState(st.floorMode, st.floorUntil, FLOOR_BY, floorMode = st.floorMode, floorUntil = st.floorUntil)
 
   /** Choix coherent : `off` n'a pas d'echeance, une echeance deja passee vaut `off`. */
   fun normalize(mode: String, untilS: Long, nowS: Long): Pair<String, Long> {
