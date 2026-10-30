@@ -42,6 +42,14 @@ class ClipboardGuardTest {
 
   private fun src(name: String) = File("src/main/java/dev/aura/mobile/device/$name").readText()
 
+  @Test fun le_resume_montre_en_entier_une_adresse_cachee_en_fin_de_long_texte() {
+    val t = "Merci pour le repas de samedi, voici le detail des courses et du vin. ".repeat(3) + "Rembourse sur FR76 3000 6000 0112 3456 7890 189"
+    val s = ConfirmSummary.clipboard(t)
+    assertTrue(s, s.endsWith("; paiement : « FR76 3000 6000 0112 3456 7890 189 »"))
+    assertEquals(listOf("0x52908400098527886E0F7030069857D2E4169EE7"), ClipGuard.paymentParts("ok 0x52908400098527886E0F7030069857D2E4169EE7"))
+    assertEquals(emptyList<String>(), ClipGuard.paymentParts("Code portail 4512"))
+  }
+
   @Test fun clipboard_set_est_borne_et_notif_dismiss_passe_par_la_liste_noire() {
     assertTrue(Regex(""""clipboard_set" -> \{[^\n]*ClipGuard\.CLIP_MAX""").containsMatchIn(src("ActionExecutor.kt")))
     val l = src("AuraNotificationListener.kt")

@@ -55,6 +55,10 @@ class IdTableTest {
     val ex = src("ActionExecutor.kt")
     assertFalse("ActionExecutor ecrase une action en cours : running[id] = …", Regex("""running\[[^\]]+\]\s*=""").containsMatchIn(ex))
     assertTrue(ex.contains("running.claim(") && ex.contains("\"duplicate_id\""))
+    // le doublon ne renvoie rien au serveur (l'id est celui de l'action vivante)
+    val dup = Regex("""if \(!running\.claim\(id, r\)\) \{([\s\S]*?)\n    \}""").find(ex)?.groupValues?.get(1).orEmpty()
+    assertTrue("branche du doublon introuvable", dup.contains("\"duplicate_id\""))
+    assertFalse("le doublon renvoie un action_result", dup.contains("bridge.send") || dup.contains("action_result"))
     assertTrue(ex.contains("running.release("))
     assertTrue("le bouton de la notification transmet notif_id", src("Notifs.kt").contains("getStringExtra(\"notif_id\")"))
   }

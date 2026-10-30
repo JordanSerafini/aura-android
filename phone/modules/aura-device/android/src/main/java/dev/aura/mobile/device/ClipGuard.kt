@@ -34,4 +34,18 @@ object ClipGuard {
   private fun ibanLike(t: String): Boolean = IBAN.findAll(t).any { m -> m.value.count { it.isDigit() } >= 12 }
 
   fun payment(t: String): Boolean = ibanLike(t) || card(t) || CRYPTO.containsMatchIn(t)
+
+  /**
+   * Les coordonnees de paiement trouvees dans le texte, telles quelles : la carte de confirmation les montre EN ENTIER,
+   * meme placees en fin d'un long texte que le resume tronque a 120 caracteres.
+   */
+  fun paymentParts(t: String): List<String> {
+    val iban = IBAN.findAll(t).map { it.value }.filter { v -> v.count { it.isDigit() } >= 12 }
+    val cards = Regex("(?<!\\d)\\d{4}([ -])\\d{4}\\1\\d{4}\\1\\d{4}(?!\\d)").findAll(t).map { it.value } +
+      Regex("(?<!\\d)(?:\\d[ -]?){12,18}\\d(?!\\d)").findAll(t).map { it.value }.filter { v ->
+        val d = v.filter { it.isDigit() }; d.length in 13..19 && luhn(d) && !d.startsWith("0") }
+    val all = (iban + cards + CRYPTO.findAll(t).map { it.value }).map { it.trim() }.distinct().toList()
+    // les chiffres d'un IBAN ou d'une adresse 0x… ressemblent a une carte : un morceau d'une coordonnee n'en est pas une 2e
+    return all.filter { p -> all.none { it != p && it.contains(p) } }
+  }
 }

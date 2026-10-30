@@ -55,7 +55,11 @@ object ConfirmSummary {
   }
 
   /** clipboard_set confirme (texte de paiement, N8) : ce qui sera REELLEMENT copie, et sa longueur. */
-  fun clipboard(text: String?): String = "Copier dans le presse-papiers : ${quote(text)} (${(text ?: "").length} car.)"
+  fun clipboard(text: String?): String {
+    val parts = ClipGuard.paymentParts(text ?: "").map { clean(it, RECIPIENT_MAX) }.take(3)
+    return "Copier dans le presse-papiers : ${quote(text)} (${(text ?: "").length} car.)" +
+      (if (parts.isEmpty()) "" else " ; paiement : " + parts.joinToString(", ") { "« $it »" })
+  }
 
   /**
    * notif_reply (revue securite du 27/10, N2) : l'app et la conversation (ou le titre) de la notification REELLEMENT

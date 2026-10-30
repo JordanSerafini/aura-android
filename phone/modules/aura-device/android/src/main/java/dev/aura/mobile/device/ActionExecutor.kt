@@ -93,10 +93,9 @@ class ActionExecutor {
     val r = Running(id)
     // revue du 27/10, N4 : un action_id deja en cours est refuse, sans rien executer ni demander de confirmation
     // (l'ecraser laissait « Accepter » sur la carte de la 1re demande valider la 2e)
+    // AUCUN action_result pour le doublon : il porterait l'id de l'action vivante et le serveur la croirait finie en
+    // echec alors qu'elle attend encore sa confirmation (son vrai resultat serait ignore) ; journal seul
     if (!running.claim(id, r)) {
-      val dup = JSONObject().put("type", "action_result").put("action_id", id)
-      fail(dup, "duplicate_id", "action_id déjà en cours sur le téléphone : demande refusée", null)
-      Aura.bridge.send(dup)
       log(action, summary, "bridge", mustConfirm, false, "duplicate_id", 0L, params)
       return
     }
