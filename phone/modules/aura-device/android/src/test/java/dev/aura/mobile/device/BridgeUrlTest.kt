@@ -12,7 +12,7 @@ class BridgeUrlTest {
     assertTrue(BridgeUrl.accepted("wss://hote.exemple/ws", debuggable = false))
     assertTrue(BridgeUrl.accepted("WSS://hote.exemple:8443/ws?x=1", debuggable = false))
     assertTrue(BridgeUrl.accepted(" wss://hote.exemple/ws \n", debuggable = false))
-    for (u in listOf("ws://hote.exemple/ws", "ws://192.168.1.10:8080/ws", "ws://localhost/ws", "http://hote.exemple/ws",
+    for (u in listOf("ws://hote.exemple/ws", "ws://192.168.0.20:8080/ws", "ws://localhost/ws", "http://hote.exemple/ws",
       "https://hote.exemple/ws", "ftp://hote.exemple", "wss://", "wss:///ws", "wss://hote exemple/ws", "hote.exemple/ws", "")) {
       assertFalse(u, BridgeUrl.accepted(u, debuggable = false))
     }

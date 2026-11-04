@@ -161,7 +161,7 @@ object PauseLogic {
   fun refusal(mode: String, until: Long): ActionError {
     val scope = if (mode == PauseMode.ALL) "toute action sur le téléphone" else "la lecture et le contrôle d'apps"
     val end = if (until > 0L) " jusqu'à ${hhmm(until)}" else " jusqu'à la reprise"
-    return ActionError("paused", "Aura est en pause ($scope refusé)$end : l'utilisateur doit la reprendre (Réglages → Pause d'Aura)")
+    return ActionError("paused", "Aura est en pause ($scope refusé)$end : l'utilisateur doit la reprendre (Appareil → Pause d'Aura)")
   }
 
   /** `welcome` du bridge : l'etat de pause peut etre un objet (`pause` / `pause_state`) ou des champs a plat. */

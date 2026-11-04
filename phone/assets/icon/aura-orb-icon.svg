@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Icône pleine (ancienne API, PWA, téléchargements) : orbe sur le fond --bg sombre (#0e1017), carré arrondi. -->
+  <rect width="1024" height="1024" rx="224" fill="#0e1017"/>
+  <g transform="translate(512 512) scale(1.25) translate(-512 -512)">
+  <defs>
+    <radialGradient id="body" cx="0.40" cy="0.36" r="0.72">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.12" stop-color="#d4fbf7"/>
+      <stop offset="0.36" stop-color="#82f2e8"/>
+      <stop offset="0.70" stop-color="#a99aff"/>
+      <stop offset="1" stop-color="#8b73ff"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#a99aff" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#a99aff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="front"><rect x="0" y="512" width="1024" height="512"/></clipPath>
+    <clipPath id="back"><rect x="0" y="0" width="1024" height="512"/></clipPath>
+  </defs>
+  <circle cx="512" cy="512" r="300" fill="url(#glow)"/>
+  <g transform="rotate(-32 512 512)"><ellipse cx="512" cy="512" rx="300" ry="96" fill="none" stroke="#82f2e8" stroke-width="20" clip-path="url(#back)"/></g>
+  <circle cx="512" cy="512" r="196" fill="url(#body)"/>
+  <g transform="rotate(-32 512 512)"><ellipse cx="512" cy="512" rx="300" ry="96" fill="none" stroke="#82f2e8" stroke-width="20" clip-path="url(#front)"/></g>
+  </g>
+</svg>

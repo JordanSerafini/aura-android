@@ -143,7 +143,7 @@ object UiGuard {
     val app = p.str("app")?.trim()?.lowercase().orEmpty()
     val op = p.str("op")?.trim().orEmpty()
     if (op !in OPS) throw ActionError("bad_params", "op : ${OPS.joinToString(" | ")} attendu")
-    // liste noire d'abord, sur ce que Claude a ecrit (paquet OU alias : « revolut » ne passe pas)
+    // liste noire d'abord, sur ce que le serveur a ecrit (paquet OU alias : « revolut » ne passe pas)
     if (blocked(app)) throw blockedError()
     val candidates: List<String> = when {
       PKG.matches(app) -> listOf(app)
@@ -155,7 +155,7 @@ object UiGuard {
     val allowed = candidates.filter { it in whitelist }
     if (allowed.isEmpty()) {
       throw ActionError("app_not_allowed", "« $app » n'est pas dans la liste blanche du téléphone " +
-        "(Aura → Réglages → Contrôle d'apps) : à l'utilisateur de l'y ajouter")
+        "(Aura → Appareil → Automatisations → Contrôle d'apps) : à l'utilisateur de l'y ajouter")
     }
     fun text(key: String, limit: Int): String? {
       val v = p.str(key) ?: return null

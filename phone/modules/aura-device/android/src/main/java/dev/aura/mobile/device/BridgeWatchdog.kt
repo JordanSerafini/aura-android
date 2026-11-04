@@ -21,20 +21,20 @@ import java.util.concurrent.TimeUnit
  * Moyen : UNE alarme AlarmManager inexacte `setAndAllowWhileIdle(ELAPSED_REALTIME_WAKEUP)` (horloge qui avance pendant le
  * sommeil ; ni permission d'alarme exacte, ni dependance WorkManager). Une seule alarme a la fois, remplacee a chaque pose :
  *  - hors ligne : 1, 2, 5, 10, 15 puis 30 min (backoff, remis a zero au welcome) -> kick() de la socket ;
- *  - en ligne : toutes les 15 min, un `ping` applicatif ; sans aucun message du bridge 20 s plus tard, la socket est jugee
+ *  - en ligne : toutes les 5 min (15 min jusqu'au 14/10, passe a 5 apres des coupures au changement de reseau), un `ping` applicatif ; sans aucun message du bridge 20 s plus tard, la socket est jugee
  *    morte (NAT expire pendant le sommeil, Wi-Fi change) et relancee. Le bridge envoie de lui-meme une trame ping toutes les
  *    30 s : cette veille ne sert que quand la socket est morte SANS que personne ne le voie.
  * Pendant un passage : verrou de veille partiel de 25 s au plus (le temps du pong ou de l'ouverture TLS), relache des que
  * c'est tranche.
  *
- * Cout (estimation, non mesure sur le S22) : en ligne, 4 reveils par heure au plus, ~1 s de CPU et ~200 octets chacun sur
+ * Cout (estimation, non mesure sur le S22) : en ligne, 12 reveils par heure au plus, ~1 s de CPU et ~200 octets chacun sur
  * une socket deja ouverte ; en Doze profond Android regroupe ces alarmes dans ses fenetres de maintenance (au plus une toutes
  * les ~9 a 15 min par app), donc souvent moins. Hors ligne : 5 essais la premiere heure, puis 2 par heure. A comparer aux
  * trames ping du bridge toutes les 30 s, deja la, qui coutent bien davantage. Ordre de grandeur : moins de 1 % de batterie
  * par jour.
  */
 object WatchdogLogic {
-  const val ONLINE_CHECK_MS = 15 * 60_000L
+  const val ONLINE_CHECK_MS = 5 * 60_000L
   const val PONG_WAIT_MS = 20_000L
   const val WAKE_MAX_MS = 25_000L
   val OFFLINE_STEPS_MS = longArrayOf(60_000L, 120_000L, 300_000L, 600_000L, 900_000L, 1_800_000L)
@@ -69,7 +69,7 @@ object BridgeWatchdog {
     }
   }
 
-  /** welcome recu : backoff remis a zero, prochain controle dans 15 min. */
+  /** welcome recu : backoff remis a zero, prochain controle dans 5 min. */
   fun onOnline() {
     attempts = 0
     schedule(WatchdogLogic.ONLINE_CHECK_MS)

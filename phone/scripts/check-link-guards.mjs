@@ -44,6 +44,11 @@ assert.equal(hashOf("aura://notif/7ad617618602/act" + K, undefined), "notifs")
 assert.equal(hashOf("aura://conv/abc_12", () => false), "conv=abc_12")
 assert.equal(hashOf("aura://notifs", () => false), "notifs")
 assert.equal(hashOf("aura://talk", () => false), null)
+// raccourcis de l'icone : liste fermee d'onglets
+for (const v of ["chat", "notifs", "actions", "backlog", "rappels"]) assert.equal(hashOf(`aura://view/${v}`, () => false), `view=${v}`)
+for (const bad of ["aura://view/plus", "aura://view/", "aura://view/chat2", "aura://view/x?y=1", "aura://viewer/chat"]) {
+  assert.equal(hashOf(bad, () => false), null, "pas de vue : " + bad)
+}
 // F2 (revue securite du 27/10) : le jeton d'appairage herite d'une redirection ne part pas dans le navigateur
 assert.equal(externalUrl("https://sso.example.com/login#pair=SECRET&name=phone"), "https://sso.example.com/login")
 assert.equal(externalUrl("https://other.example/app/?x=1#name=p&pair=SECRET"), "https://other.example/app/?x=1")

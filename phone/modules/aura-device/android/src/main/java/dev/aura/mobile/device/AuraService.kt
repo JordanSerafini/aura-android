@@ -38,6 +38,7 @@ class AuraService : Service() {
     Aura.watch.startListening()
     PhoneContext.start(this)
     PhoneEvents.start(this)
+    HudLive.update(this)  // 1.9.0 : Live Update du HUD (rendez-vous proche...) retablie apres un redemarrage
     Aura.emitState()
     return START_STICKY
   }
@@ -113,11 +114,23 @@ class AuraService : Service() {
         else -> "Hors ligne, nouvel essai automatique"
       }
       val paused = Pause.active()
-      val text = if (paused) "${Pause.describe()} · $link" else link
+      // 1.9.0 : mini-HUD dans le volet (HudSurfaces) : alertes en titre, prochain RDV et « à traiter » en texte, detail deplie
+      val hud = if (!paused && HudSurfaces.notifOn() && HudStore.feed(ctx) != null) HudSurfaces.brief(ctx) else null
+      val text = if (paused) "${Pause.describe()} · $link" else if (hud != null) hud.text else link
       return NotificationCompat.Builder(ctx, Notifs.CH_SERVICE)
         .setSmallIcon(R.drawable.ic_aura)
-        .setContentTitle(if (paused) "Aura en pause" else if (Aura.bridge.status == "online") "Aura connecté" else "Aura")
+        .setContentTitle(if (paused) "Aura en pause" else if (hud != null) "Aura · ${hud.title}" else if (Aura.bridge.status == "online") "Aura connecté" else "Aura")
         .setContentText(text)
+        .apply {
+          if (hud != null) {
+            val st = NotificationCompat.InboxStyle().setSummaryText(link)
+            hud.lines.forEach { st.addLine(it) }
+            setStyle(st)
+            setContentIntent(HudSurfaces.openIntent(ctx, 7300, "aura://hub"))
+          } else {
+            setContentIntent(Notifs.launchAppIntent(ctx))
+          }
+        }
         // arret d'urgence : un appui depuis le rideau de notifications, sans ouvrir l'app
         .addAction(0, if (paused) "▶ Reprendre" else "⏸ Pause 1 h",
           Notifs.receiverIntent(ctx, Notifs.ID_SERVICE + 1, ActionReceiver.ACTION_PAUSE_TOGGLE))
@@ -127,7 +140,6 @@ class AuraService : Service() {
         .setPriority(NotificationCompat.PRIORITY_MIN)
         .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-        .setContentIntent(Notifs.launchAppIntent(ctx))
     }
 
     fun refreshNotification() {
@@ -145,5 +157,7 @@ class BootReceiver : BroadcastReceiver() {
     if (Aura.prefs.getBoolean("service_enabled", false) && Aura.token.isNotEmpty()) {
       AuraService.start(context, false)
     }
+    // 1.9.0 : widget redessine apres une mise a jour (gabarits responsifs) ou un redemarrage, avec le dernier flux connu
+    try { AuraHudWidget.refresh(context) } catch (e: Exception) { Log.w(Aura.TAG, "widget HUD : rendu au demarrage", e) }
   }
 }

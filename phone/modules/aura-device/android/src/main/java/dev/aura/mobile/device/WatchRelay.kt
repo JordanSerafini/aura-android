@@ -48,7 +48,9 @@ object WatchRelay {
       if (mp3.isNotEmpty()) audio.add(seq, mp3)
       if (!last) return
       val bytes = audio.bytes()
-      if (bytes.isNotEmpty()) Aura.pool.execute { Aura.watch.sendFile(node, "/aura/audio/$id", bytes) }
+      if (bytes.isEmpty()) return
+      Usage.count("montre.reponse_lue")  // réponse envoyée en voix à la montre (mode voix, ou auto hors heures de travail)
+      Aura.pool.execute { Aura.watch.sendFile(node, "/aura/audio/$id", bytes) }
     }
   }
 

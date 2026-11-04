@@ -2,6 +2,7 @@ package dev.aura.mobile.device
 
 import org.json.JSONObject
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 /*
  * Compteurs d'usage (`usage_report`, PROTOCOL.md §11.18) : des NOMBRES, jamais un contenu. Logique pure, testée en JVM
@@ -10,6 +11,12 @@ import java.time.LocalDate
  * Sémantique du bridge : INCRÉMENTS depuis le dernier envoi (il additionne). Les compteurs sont donc rangés par jour
  * (`jour -> nom -> n`) et vidés à l'envoi ; un jour qui n'a pas fini reçoit le reste de ses incréments à l'envoi suivant,
  * sous le même `day`. Un rapport invalide est refusé EN ENTIER par le bridge : les noms et les valeurs sont donc bornés ici.
+ *
+ * Cadence (1.4.0) : au plus un envoi par TRANCHE DE 6 H (0-6, 6-12, 12-18, 18-24), au lieu d'un par jour. Mesure du 09/10 :
+ * la veille passe toutes les 15 min, donc l'unique envoi du jour partait vers 00:15 avec la journée d'AVANT ; la section du
+ * jour de `usage_counters.json` restait vide jusqu'au lendemain (« plus aucun ecran.* ni evt.* le 09/10 »), et une
+ * réinstallation (08/10 16:49) effaçait tout ce qui attendait depuis minuit. Quatre envois par jour au plus, sur des passages
+ * qui existent déjà (welcome, veille, arrière-plan) : aucun réveil de plus.
  */
 typealias UsageBuckets = LinkedHashMap<String, LinkedHashMap<String, Int>>
 
@@ -25,6 +32,39 @@ object UsageLogic {
   const val MAX_NAMES_PER_DAY = 120
   /** Jours gardés localement sans envoi possible (le bridge accepte 90 jours en arrière, on reste largement dedans). */
   const val KEEP_DAYS = 14L
+  /** Largeur d'une tranche d'envoi, en heures (24 doit en être un multiple). */
+  const val SLOT_HOURS = 6
+  /** Pref : jour du premier démarrage de l'app avec ces prefs (absente = installation neuve ou données effacées). */
+  const val PREF_SINCE = "usage_since"
+  /** Compteurs relayés par la montre (`/aura/usage`) : nom court, valeur bornée par message. */
+  private val WATCH_NAME = Regex("^[a-z0-9_]{1,20}$")
+  const val WATCH_MAX_PER_MESSAGE = 100
+
+  /** Tranche courante, `AAAA-MM-JJTn` (n = heure / 6) : la clé « déjà envoyé » de `due`. */
+  fun slot(now: LocalDateTime): String = "${now.toLocalDate()}T${now.hour / SLOT_HOURS}"
+
+  /**
+   * Compteurs du démarrage à froid de l'app (module JS créé) : toujours `app.demarrage` ; `app.prefs_neuves` en plus quand
+   * les prefs ne connaissent ni le repère des compteurs ni l'ancien repère du premier lancement (`asked_basics`, posé par
+   * toutes les versions depuis 1.0.0) : une mise à jour ne compte donc pas comme une installation neuve.
+   */
+  fun coldStartCounters(hasSince: Boolean, hasLegacyMarker: Boolean): List<String> =
+    if (hasSince || hasLegacyMarker) listOf("app.demarrage") else listOf("app.demarrage", "app.prefs_neuves")
+
+  /**
+   * `/aura/usage` de la montre : `{counters: {tuile: 1}}` -> `montre.tuile` += 1. Nom `[a-z0-9_]{1,20}`, valeur entière
+   * 1..100 ; le reste est ignoré sans bruit (une montre plus récente ne fait jamais refuser le rapport du téléphone).
+   */
+  fun watchCounters(msg: JSONObject): List<Pair<String, Int>> {
+    val c = msg.optJSONObject("counters") ?: return emptyList()
+    val out = ArrayList<Pair<String, Int>>()
+    for (k in c.keys()) {
+      val v = c.opt(k)
+      if (!WATCH_NAME.matches(k) || v !is Int || v < 1) continue
+      out += "montre.$k" to v.coerceAtMost(WATCH_MAX_PER_MESSAGE)
+    }
+    return out.sortedBy { it.first }.take(10)
+  }
 
   fun validName(name: String): Boolean = NAME.matches(name)
 
@@ -37,9 +77,9 @@ object UsageLogic {
     return true
   }
 
-  /** Un envoi est dû : rien n'est parti AUJOURD'HUI et il y a quelque chose à dire. « Au plus une fois par jour. » */
-  fun due(lastReportDay: String?, today: String, buckets: UsageBuckets): Boolean =
-    lastReportDay != today && buckets.values.any { it.isNotEmpty() }
+  /** Un envoi est dû : rien n'est parti dans cette tranche (`slot`) et il y a quelque chose à dire. */
+  fun due(lastReportSlot: String?, currentSlot: String, buckets: UsageBuckets): Boolean =
+    lastReportSlot != currentSlot && buckets.values.any { it.isNotEmpty() }
 
   /** Supprime les jours trop vieux ou vides, rend le nombre de jours supprimés. */
   fun prune(buckets: UsageBuckets, today: LocalDate): Int {

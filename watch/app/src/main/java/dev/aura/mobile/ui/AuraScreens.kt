@@ -1,5 +1,6 @@
 package dev.aura.mobile.ui
 
+import android.animation.ValueAnimator
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -42,6 +43,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
@@ -65,13 +68,15 @@ import dev.aura.mobile.R
 import dev.aura.mobile.audio.VoiceRecorder
 import dev.aura.mobile.audio.VolumeLogic
 import dev.aura.mobile.data.AuraBus
+import dev.aura.mobile.data.ConfirmQueue
 import dev.aura.mobile.notify.Haptics
 import dev.aura.mobile.protocol.ConvItem
 import dev.aura.mobile.protocol.ConvList
 import dev.aura.mobile.protocol.NewConvStatus
-import dev.aura.mobile.protocol.States
+import dev.aura.mobile.protocol.StatusLogic
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.ZoneId
 
 val QUICK_REPLIES = listOf("Quoi de neuf ?", "Mes RDV du jour", "Résumé de ma journée", "Rappelle-moi dans 10 min")
 
@@ -89,6 +94,7 @@ fun AuraNavHost(
   onNewConv: () -> Unit,
   onLouder: () -> Boolean,
   onQuieter: () -> Boolean,
+  onOpenConfirm: () -> Boolean,
 ) {
   val nav = rememberSwipeDismissableNavController()
   // Relance depuis la tuile (ou une notification) : retour à l'écran principal, où qu'on soit.
@@ -102,6 +108,7 @@ fun AuraNavHost(
           isRecording, recordStartedAt, onMic, onQuick, onKeyboard, onReplay, onStopAudio,
           onConvs = { nav.navigate("convs") }, onNewConv = onNewConv, onLouder = { onLouder() }, onQuieter = { onQuieter() },
           onVolume = { nav.navigate("volume") },
+          onOpenConfirm = onOpenConfirm,
         ) { nav.navigate("settings") }
       }
       composable("settings") { SettingsScreen() }
@@ -132,6 +139,7 @@ fun MainScreen(
   onLouder: () -> Unit,
   onQuieter: () -> Unit,
   onVolume: () -> Unit,
+  onOpenConfirm: () -> Boolean,
   onSettings: () -> Unit,
 ) {
   val conversation by AuraBus.conversation.collectAsState()
@@ -141,6 +149,8 @@ fun MainScreen(
   val reachable by AuraBus.phoneReachable.collectAsState()
   val lastAudio by AuraBus.lastAudioPath.collectAsState()
   val playing by AuraBus.playing.collectAsState()
+  val status by AuraBus.status.collectAsState()
+  val pendingConfirms by AuraBus.confirms.collectAsState()
   val listState = rememberTransformingLazyColumnState()
 
   var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -150,6 +160,17 @@ fun MainScreen(
       delay(500)
     }
   }
+  // Horloge lente du bandeau d'état : un état devient périmé, une pause arrive à échéance, sans nouveau message.
+  var clockS by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
+  LaunchedEffect(Unit) {
+    while (true) {
+      clockS = System.currentTimeMillis() / 1000
+      delay(STATUS_TICK_MS)
+    }
+  }
+  val banner = StatusLogic.banner(status, reachable, clockS, ZoneId.systemDefault())
+  val localLive = ConfirmQueue.prune(pendingConfirms, clockS * 1000).size
+  val chip = StatusLogic.pendingChip(status, clockS, localLive)
 
   // Défilement à la lunette : TransformingLazyColumn gère l'entrée rotative par défaut.
   ScreenScaffold(scrollState = listState) { padding ->
@@ -178,14 +199,30 @@ fun MainScreen(
           )
         }
       }
-      if (reachable == false) {
+      // État du téléphone (0.2.0) : injoignable, pause, état inconnu, PC hors ligne ; rien quand tout va bien.
+      banner?.let { b ->
+        item { StatusBanner(b) }
+      }
+      chip?.let { c ->
         item {
-          Text(
-            "Téléphone injoignable : vérifie le Bluetooth et l'app Aura du téléphone",
-            color = AuraColors.warn,
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+          Button(
+            onClick = { onOpenConfirm() },
+            enabled = c.canOpen,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+              containerColor = AuraColors.ok,
+              contentColor = AuraColors.onStatus,
+              secondaryContentColor = AuraColors.onStatus,
+              iconColor = AuraColors.onStatus,
+              // rien à rouvrir sur la montre : pastille d'information, la réponse se fait sur le téléphone
+              disabledContainerColor = AuraColors.surfaceLine,
+              disabledContentColor = AuraColors.text,
+              disabledSecondaryContentColor = AuraColors.muted,
+              disabledIconColor = AuraColors.muted,
+            ),
+            icon = { Icon(painterResource(R.drawable.ic_check), contentDescription = null) },
+            label = { Text(c.label, maxLines = 1) },
+            secondaryLabel = { Text(c.detail, maxLines = 1, overflow = TextOverflow.Ellipsis) },
           )
         }
       }
@@ -207,8 +244,12 @@ fun MainScreen(
       item {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
           AuraHalo(
-            active = isRecording || conversation.state == States.THINKING,
-            color = if (isRecording) AuraColors.recording else AuraColors.accent,
+            animated = HaloLogic.animated(isRecording, conversation.state, playing, ValueAnimator.areAnimatorsEnabled()),
+            color = when {
+              isRecording -> AuraColors.recording
+              playing -> AuraColors.cyan
+              else -> AuraColors.accent
+            },
             modifier = Modifier.size(120.dp),
           )
           FilledIconButton(
@@ -216,7 +257,7 @@ fun MainScreen(
             modifier = Modifier.size(84.dp),
             colors = IconButtonDefaults.filledIconButtonColors(
               containerColor = if (isRecording) AuraColors.recording else AuraColors.accent,
-              contentColor = AuraColors.onAccent,
+              contentColor = if (isRecording) AuraColors.onStatus else AuraColors.onAccent,
             ),
           ) {
             Icon(
@@ -253,17 +294,24 @@ fun MainScreen(
       }
       item {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-          FilledTonalButton(onClick = onQuieter, modifier = Modifier.size(width = 52.dp, height = 44.dp)) {
+          // 0.2.0 : 52×48 dp (au moins 48×48 de zone tactile), au lieu de 52×44.
+          FilledTonalButton(
+            onClick = onQuieter,
+            modifier = Modifier.size(width = VOLUME_BUTTON_W, height = VOLUME_BUTTON_H).semantics { contentDescription = "Moins fort" },
+          ) {
             Text("−", style = MaterialTheme.typography.titleLarge)
           }
           // Taper le libellé : écran volume, réglable à la lunette.
           Box(
-            Modifier.weight(1f).height(44.dp).clickable(onClickLabel = "Régler le volume", onClick = onVolume),
+            Modifier.weight(1f).height(VOLUME_BUTTON_H).clickable(onClickLabel = "Régler le volume", onClick = onVolume),
             contentAlignment = Alignment.Center,
           ) {
             Text(volume?.let(VolumeLogic::label) ?: "Volume", color = AuraColors.muted, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
           }
-          FilledTonalButton(onClick = onLouder, modifier = Modifier.size(width = 52.dp, height = 44.dp)) {
+          FilledTonalButton(
+            onClick = onLouder,
+            modifier = Modifier.size(width = VOLUME_BUTTON_W, height = VOLUME_BUTTON_H).semantics { contentDescription = "Plus fort" },
+          ) {
             Text("+", style = MaterialTheme.typography.titleLarge)
           }
         }
@@ -519,12 +567,25 @@ private fun ago(updated: Double): String {
   }
 }
 
-/** Le halo d'Aura autour du micro : il respire au repos, tourne et s'avive quand elle écoute ou réfléchit. */
+/**
+ * Le halo d'Aura autour du micro. 0.2.0 : il ne bouge que si `animated` (HaloLogic : enregistrement, réflexion,
+ * lecture, et animations système permises) ; au repos il est statique, pour la batterie.
+ */
 @Composable
-fun AuraHalo(active: Boolean, color: Color, modifier: Modifier = Modifier) {
+fun AuraHalo(animated: Boolean, color: Color, modifier: Modifier = Modifier) {
+  if (animated) AnimatedHalo(color, modifier) else HaloShape(color, breath = 0.6f, turn = 0f, sparks = false, modifier = modifier)
+}
+
+@Composable
+private fun AnimatedHalo(color: Color, modifier: Modifier) {
   val t = rememberInfiniteTransition(label = "halo")
-  val breath by t.animateFloat(0.55f, 1f, infiniteRepeatable(tween(if (active) 700 else 2400), RepeatMode.Reverse), label = "breath")
-  val turn by t.animateFloat(0f, 360f, infiniteRepeatable(tween(if (active) 1600 else 9000, easing = LinearEasing)), label = "turn")
+  val breath by t.animateFloat(0.55f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "breath")
+  val turn by t.animateFloat(0f, 360f, infiniteRepeatable(tween(1600, easing = LinearEasing)), label = "turn")
+  HaloShape(color, breath, turn, sparks = true, modifier = modifier)
+}
+
+@Composable
+private fun HaloShape(color: Color, breath: Float, turn: Float, sparks: Boolean, modifier: Modifier) {
   Canvas(modifier) {
     val r = size.minDimension / 2
     drawCircle(
@@ -532,6 +593,7 @@ fun AuraHalo(active: Boolean, color: Color, modifier: Modifier = Modifier) {
       radius = r,
     )
     drawCircle(color.copy(alpha = 0.35f + 0.4f * breath), radius = r * 0.86f, style = Stroke(width = 2.dp.toPx()))
+    if (!sparks) return@Canvas
     // trois étincelles qui orbitent
     for (i in 0 until 3) {
       val a = Math.toRadians((turn + i * 120f).toDouble())
@@ -540,3 +602,27 @@ fun AuraHalo(active: Boolean, color: Color, modifier: Modifier = Modifier) {
     }
   }
 }
+
+/** Bandeau d'état de l'écran principal (StatusLogic.banner). */
+@Composable
+private fun StatusBanner(b: StatusLogic.Banner) {
+  val color = when (b.tone) {
+    StatusLogic.Tone.BAD -> AuraColors.ko
+    StatusLogic.Tone.WARN -> AuraColors.warn
+    StatusLogic.Tone.OK -> AuraColors.ok
+    StatusLogic.Tone.DIM -> AuraColors.muted
+  }
+  Column(
+    Modifier.fillMaxWidth().padding(horizontal = 8.dp).semantics(mergeDescendants = true) {},
+    horizontalAlignment = Alignment.CenterHorizontally,
+  ) {
+    Text(b.text, color = color, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
+    b.detail?.let {
+      Text(it, color = AuraColors.muted, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+    }
+  }
+}
+
+private const val STATUS_TICK_MS = 30_000L
+private val VOLUME_BUTTON_W = 52.dp
+private val VOLUME_BUTTON_H = 48.dp

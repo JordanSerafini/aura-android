@@ -27,6 +27,11 @@ class AuraDeviceModule : Module() {
       Aura.init(context)
       Aura.appForeground = true  // le module nait quand le JS de l'activite demarre
       Aura.listener = { event, json -> sendEvent(event, mapOf("json" to json)) }
+      // demarrage a froid de l'app (bundle JS charge), distinct des retours au premier plan (`ecran.aura`) ; et des prefs
+      // neuves (installation propre, donnees effacees) : le 08/10, une reinstallation a efface les compteurs du jour
+      // sans que rien ne le dise (UsageLogic.coldStartCounters)
+      UsageLogic.coldStartCounters(Aura.prefs.contains(UsageLogic.PREF_SINCE), Aura.prefs.contains("asked_basics")).forEach { Usage.count(it) }
+      if (!Aura.prefs.contains(UsageLogic.PREF_SINCE)) Aura.prefs.edit().putString(UsageLogic.PREF_SINCE, java.time.LocalDate.now().toString()).apply()
     }
 
     OnDestroy {
@@ -47,7 +52,7 @@ class AuraDeviceModule : Module() {
     OnActivityEntersBackground {
       Aura.appForeground = false
       LiveUpdate.onForegroundChanged()
-      Usage.maybeReport()  // usage_report : au plus une fois par jour, des nombres seulement (PROTOCOL.md §11.18)
+      Usage.maybeReport()  // usage_report : au plus une fois par tranche de 6 h, des nombres seulement (PROTOCOL.md §11.18, §19.6)
     }
 
     // Rend "" si tout est pris en compte, sinon le motif du refus (jamais l'URL) : en release une URL qui n'est pas
@@ -85,7 +90,7 @@ class AuraDeviceModule : Module() {
       if (Aura.token.isEmpty()) return@Function "Aucun jeton appareil"
       if (!Aura.serviceRunning) AuraService.start(context, true)
       Aura.talk?.stop()
-      val s = TalkSession { json -> Aura.emit("onTalk", json.toString()) }
+      val s = TalkSession(emit = { json -> Aura.emit("onTalk", json.toString()) })
       Aura.talk = s
       s.start()
       keepScreenOn(true)
@@ -93,6 +98,11 @@ class AuraDeviceModule : Module() {
     }
 
     Function("talkTap") { Aura.talk?.tap() }
+    // « Micro coupe pendant qu'Aura parle » (1.5.0) : pref persistante, appliquee a la session en cours s'il y en a une
+    Function("talkSetMute") { on: Boolean ->
+      Aura.prefs.edit().putString(BargeInLogic.PREF_MUTE, if (on) "1" else "0").apply()
+      Aura.talk?.setMute(on)
+    }
 
     Function("talkStop") {
       Aura.talk?.stop()
@@ -107,8 +117,35 @@ class AuraDeviceModule : Module() {
 
     // demande envoyee par la PWA de l'onglet Aura (id du chat/voice) : suivie par le Live Update
     Function("trackRequest") { id: String -> if (id.isNotBlank() && id.length <= 64) LiveUpdate.track(id) }
+    // widget d'ecran d'accueil (17/10 soir) : les pastilles de la PWA, des qu'elle les envoie (AuraWidget.kt)
+    Function("setWidgetCounts") { actions: Int, notifs: Int ->
+      AuraWidget.setCounts(context, actions.coerceIn(0, 999), notifs.coerceIn(0, 999))
+    }
+    // haptique semantique de la PWA (17/10 soir, __auraNativeV 3) : effet systeme, suit le reglage « retour haptique »
+    Function("haptic") { kind: String ->
+      val c = HapticLogic.constant(kind, Build.VERSION.SDK_INT) ?: return@Function false
+      val act = appContext.currentActivity ?: return@Function false
+      act.runOnUiThread { act.window?.decorView?.performHapticFeedback(c) }
+      true
+    }
 
     Function("canPostPromoted") { LiveUpdate.canPromote() }
+
+    // gestes du PC portes au S22 (21/10, __auraNativeV 5, PROTOCOL.md §32) : copie et partage du texte nettoye par le
+    // bridge ; « Ce que j'ai copié » = l'AGE d'un texte copie ailleurs (ClipLogic), le contenu seulement sur demande
+    Function("copyText") { text: String -> copyText(text) }
+    Function("shareText") { text: String, subject: String -> shareText(text, subject) }
+    Function("clipHint") { clipHint() }
+    Function("clipText") { clipText() }
+    // HUD hors de l'ecran d'accueil (1.9.0, PROTOCOL.md §35) : notification, Live Update, tuile, montre
+    Function("getHud") { HudSurfaces.settingsJson(context).toString() }
+    Function("setHud") { json: String -> HudSurfaces.setSettings(context, json) }
+    Function("hudPinWidget") { HudSurfaces.pinWidget(appContext.currentActivity ?: context) }
+    Function("hudAddTile") { HudSurfaces.addTile(appContext.currentActivity) }
+
+    // barres systeme assorties au theme (1.4.0) : icones sombres sur fond clair et inversement ; le fond de la fenetre
+    // (visible sous la barre de navigation transparente, edge-to-edge) prend celui des ecrans
+    Function("setSystemBars") { light: Boolean, background: String -> systemBars(light, background) }
 
     // compteur d'usage (UsageLogic.kt) : un nom `[a-z0-9_.]{1,40}`, un nombre ; jamais un contenu
     Function("countUsage") { name: String -> Usage.count(name) }
@@ -122,6 +159,20 @@ class AuraDeviceModule : Module() {
         val res = JSONObject()
         try {
           res.put("ok", true).put("result", PhoneContext.setZoneHere(name))
+        } catch (e: ActionError) {
+          res.put("ok", false).put("error", e.code).put("message", e.message)
+        } catch (e: Exception) {
+          res.put("ok", false).put("error", "failed").put("message", e.message ?: e.javaClass.simpleName)
+        }
+        promise.resolve(res.toString())
+      }
+    }
+    // « Effacer la zone » (17/10 soir) : {ok, result|error, message}, meme forme que setZoneHere
+    AsyncFunction("removeZone") { name: String, promise: Promise ->
+      Aura.pool.execute {
+        val res = JSONObject()
+        try {
+          res.put("ok", true).put("result", PhoneContext.removeZone(name))
         } catch (e: ActionError) {
           res.put("ok", false).put("error", e.code).put("message", e.message)
         } catch (e: Exception) {
@@ -192,10 +243,11 @@ class AuraDeviceModule : Module() {
       Aura.bridge.send(JSONObject(json).put("type", "settings_set"))
     }
 
-    Function("setWatchSettings") { json: String ->
+    // asynchrone : la publication attend Play Services (15 s au plus), jamais sur le fil JS ; true = item enregistre
+    AsyncFunction("setWatchSettings") { json: String ->
       val parsed = JSONObject(json)
       Aura.prefs.edit().putString("watch_settings", parsed.toString()).apply()
-      Aura.watch.pushSettings()
+      Aura.watch.pushSettingsNow()
     }
 
     Function("getWatchSettings") { Aura.watchSettings().toString() }
@@ -235,11 +287,71 @@ class AuraDeviceModule : Module() {
     }
   }
 
+  private fun clipboard(): android.content.ClipboardManager? =
+    context.getSystemService(android.content.ClipboardManager::class.java)
+
+  private fun copyText(text: String): Boolean {
+    if (ClipLogic.copyRefusal(text, Pause.mode()) != null) return false
+    val cm = clipboard() ?: return false
+    cm.setPrimaryClip(android.content.ClipData.newPlainText(ClipLogic.OWN_LABEL, text.take(ClipLogic.COPY_MAX)))
+    return true
+  }
+
+  // feuille de partage Android (Gmail, Outlook, WhatsApp…) ; « Objet : » de la reponse = sujet du mail
+  private fun shareText(text: String, subject: String): Boolean {
+    if (text.isBlank()) return false
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+      .putExtra(android.content.Intent.EXTRA_TEXT, text.take(100_000))
+    if (subject.isNotBlank()) send.putExtra(android.content.Intent.EXTRA_SUBJECT, subject.take(200))
+    val chooser = android.content.Intent.createChooser(send, "Envoyer avec…")
+    val act = appContext.currentActivity
+    return try {
+      if (act != null) act.startActivity(chooser)
+      else context.startActivity(chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+      true
+    } catch (e: Exception) {
+      false
+    }
+  }
+
+  // JSON {"age_s": N} ou "" ; la description seule (pas d'avis Android), le repere avance a chaque examen
+  private fun clipHint(): String {
+    if (!Aura.appForeground) return ""
+    val d = try { clipboard()?.primaryClipDescription } catch (e: Exception) { null } ?: return ""
+    val stamp = if (Build.VERSION.SDK_INT >= 26) d.timestamp else 0L
+    val seen = Aura.prefs.getLong(ClipLogic.PREF_SEEN, 0L)
+    val isText = d.hasMimeType("text/*")
+    val age = ClipLogic.hintAge(stamp, seen, System.currentTimeMillis(), isText, d.label?.toString())
+    if (stamp > seen) Aura.prefs.edit().putLong(ClipLogic.PREF_SEEN, ClipLogic.nextSeen(stamp, seen)).apply()
+    return if (age == null) "" else JSONObject().put("age_s", age).toString()
+  }
+
+  // le contenu, sur l'appui de l'utilisateur seulement (Android 12+ affiche alors son avis : attendu)
+  private fun clipText(): String {
+    if (!Aura.appForeground || !ClipLogic.readAllowed(Pause.mode())) return ""
+    val clip = try { clipboard()?.primaryClip } catch (e: Exception) { null } ?: return ""
+    if (clip.itemCount == 0) return ""
+    return clip.getItemAt(0).coerceToText(context)?.toString()?.take(ClipLogic.TEXT_MAX) ?: ""
+  }
+
+  private fun systemBars(light: Boolean, background: String) {
+    val act = appContext.currentActivity ?: return
+    val color = try { android.graphics.Color.parseColor(background) } catch (e: Exception) { null }
+    act.runOnUiThread {
+      val w = act.window
+      val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
+      c.isAppearanceLightStatusBars = light
+      c.isAppearanceLightNavigationBars = light
+      if (color != null) w.decorView.setBackgroundColor(color)
+    }
+  }
+
   /** Ecran allume pendant une session vocale (FLAG_KEEP_SCREEN_ON sur la fenetre de l'activite). */
   private fun keepScreenOn(on: Boolean) {
     val act = appContext.currentActivity ?: return
+    val keep = on || Aura.talk != null
     act.runOnUiThread {
-      if (on) act.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+      if (keep) act.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
       else act.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
   }

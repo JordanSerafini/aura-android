@@ -31,8 +31,11 @@ class AuraWearService : WearableListenerService() {
       "/aura/pong" -> Aura.watch.onPong()
       "/aura/chat" -> { ensureService(); WatchRelay.onChat(event.sourceNodeId, json) }
       "/aura/confirm_response" -> json.str("action_id")?.let {
+        Usage.count("montre.confirmation")
         Aura.confirms.resolve(it, if (json.optBoolean("ok")) "accepted" else "refused", "watch")
       }
+      // compteurs de la montre (tuile...) : des noms courts et des nombres, rangés sous `montre.` (UsageLogic.watchCounters)
+      "/aura/usage" -> UsageLogic.watchCounters(json).forEach { (name, n) -> Usage.count(name, n) }
       "/aura/cmd_result" -> Aura.watch.onCmdResult(json)
       // bouton « Pause » de la tuile : applique ici (meme hors ligne) puis previent le bridge
       "/aura/pause_set" -> {
@@ -76,6 +79,7 @@ class AuraWearService : WearableListenerService() {
     ensureService()
     val id = path.removePrefix("/aura/voice/")
     val node = channel.nodeId
+    Usage.count("montre.voix")
     Aura.pool.execute {
       try {
         val bytes = Aura.watch.readChannel(channel)

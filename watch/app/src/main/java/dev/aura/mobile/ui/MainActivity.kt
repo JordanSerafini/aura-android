@@ -32,12 +32,14 @@ import dev.aura.mobile.notify.Notifier
 import dev.aura.mobile.protocol.ChatMessage
 import dev.aura.mobile.protocol.ConvNew
 import dev.aura.mobile.protocol.ConvSelect
+import dev.aura.mobile.protocol.LaunchCounters
 import dev.aura.mobile.protocol.NewConv
 import dev.aura.mobile.protocol.NewConvLogic
 import dev.aura.mobile.protocol.NewConvStatus
 import dev.aura.mobile.protocol.Paths
 import dev.aura.mobile.protocol.Protocol
 import dev.aura.mobile.protocol.States
+import dev.aura.mobile.wear.ConfirmCenter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -90,7 +92,10 @@ class MainActivity : ComponentActivity() {
     recorder = VoiceRecorder(this)
     // Recréation (processus tué, config) : l'intent d'origine de la tuile ne doit pas relancer un enregistrement.
     val wantsRecord = savedInstanceState == null && recordAllowed(intent)
-    if (savedInstanceState == null) reopenConfirm(intent)
+    if (savedInstanceState == null) {
+      reopenConfirm(intent)
+      countTile(intent)
+    }
     askFirstPermissions(wantsRecord)
     if (wantsRecord && Perms.granted(this, Perms.MIC)) startRecording()
     lifecycleScope.launch {
@@ -116,6 +121,7 @@ class MainActivity : ComponentActivity() {
           onNewConv = ::newConversation,
           onLouder = { AudioPlayer.louder(this) },
           onQuieter = { AudioPlayer.quieter(this) },
+          onOpenConfirm = ::openPendingConfirm,
         )
       }
     }
@@ -126,6 +132,7 @@ class MainActivity : ComponentActivity() {
     // Tuile, complication, notification : on revient à l'écran principal (même depuis Réglages/Conversations).
     AuraBus.goHome.tryEmit(Unit)
     reopenConfirm(intent)
+    countTile(intent)
     if (recordAllowed(intent) && !isRecording) {
       if (Perms.granted(this, Perms.MIC)) startRecording() else requestMicThenRecord()
     }
@@ -165,12 +172,35 @@ class MainActivity : ComponentActivity() {
     RecordTokenStore.gate(this).permits(
       intent?.getBooleanExtra(EXTRA_RECORD, false) == true, intent?.getStringExtra(EXTRA_RECORD_TOKEN))
 
-  /** Pastille « N à valider » de la tuile : rouvre la demande d'accord en attente, si la montre la connaît encore. */
+  /**
+   * Appui sur la tuile (bouton micro ou pastille « à valider ») ou sur la complication : un compteur au téléphone,
+   * `montre.tuile` ou `montre.complication` (des nombres seulement, LaunchCounters). Un `record` sans le jeton de la tuile
+   * n'est pas compte (recordAllowed). Téléphone injoignable : le compteur est perdu, sans conséquence (ni la tuile ni la
+   * complication ne servent à rien sans lui).
+   */
+  private fun countTile(intent: Intent?) {
+    val counter = LaunchCounters.counter(
+      record = recordAllowed(intent),
+      openConfirm = intent?.getBooleanExtra(EXTRA_CONFIRM, false) == true,
+      source = intent?.getStringExtra(LaunchCounters.EXTRA_SOURCE),
+    ) ?: return
+    app.scope.launch { runCatching { app.phone.send(Paths.USAGE, LaunchCounters.payload(counter)) } }
+  }
+
+  /**
+   * Pastille « N à valider » de la tuile, complication, pastille de l'écran principal : rouvre la plus ancienne demande
+   * d'accord encore ouverte que la montre connaît ; sinon l'écran principal reste (sa pastille dit « Réponds sur le
+   * téléphone »).
+   */
   private fun reopenConfirm(intent: Intent?) {
     if (intent?.getBooleanExtra(EXTRA_CONFIRM, false) != true) return
-    val pending = AuraBus.confirm.value ?: return
-    if (pending.deadlineMs <= System.currentTimeMillis()) return
+    openPendingConfirm()
+  }
+
+  private fun openPendingConfirm(): Boolean {
+    val pending = ConfirmCenter.oldestLive() ?: return false
     startActivity(ConfirmActivity.intent(this, pending))
+    return true
   }
 
   private fun askFirstPermissions(wantsRecord: Boolean) {

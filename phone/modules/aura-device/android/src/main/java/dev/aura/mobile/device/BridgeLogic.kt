@@ -40,11 +40,15 @@ object NotifCatchUp {
   const val MAX = 8
   const val QUIET_AFTER_S = 30 * 60.0
 
-  /** show : dans l'ordre d'affichage (la plus recente en dernier) ; silent = sans son (plus de 30 min). */
+  /** show : dans l'ordre d'affichage (la plus recente en dernier) ; silent = sans son (plus de 30 min, `silent`, nuit calme). */
   class Result(val show: List<JSONObject>, val silent: List<Boolean>, val lastTs: Double)
 
-  /** lastTs null = premiere connexion : on memorise le ts max, rien a afficher. */
-  fun select(recent: JSONArray?, lastTs: Double?, shown: Set<String>, nowS: Double): Result {
+  /**
+   * lastTs null = premiere connexion : on memorise le ts max, rien a afficher.
+   * `nightCalm` : le welcome du bridge dit que la nuit calme (23 h - 7 h) est en cours : le rattrapage ne sonne alors que pour
+   * une VRAIE urgence (gravite 3 hors fin de tache), comme les notifications en direct.
+   */
+  fun select(recent: JSONArray?, lastTs: Double?, shown: Set<String>, nowS: Double, nightCalm: Boolean = false): Result {
     val all = (0 until (recent?.length() ?: 0)).mapNotNull { recent?.optJSONObject(it) }
     val maxTs = all.maxOfOrNull { it.optDouble("ts", 0.0) } ?: 0.0
     if (lastTs == null) return Result(emptyList(), emptyList(), if (maxTs > 0) maxTs else nowS)
@@ -57,8 +61,56 @@ object NotifCatchUp {
       .sortedByDescending { it.optDouble("ts", 0.0) }
       .take(MAX)
       .reversed()
-    return Result(picked, picked.map { nowS - it.optDouble("ts", 0.0) > QUIET_AFTER_S }, maxOf(lastTs, maxTs))
+    return Result(picked, picked.map { nowS - it.optDouble("ts", 0.0) > QUIET_AFTER_S || NotifRules.mutedByNight(it, nightCalm) },
+      maxOf(lastTs, maxTs))
   }
+}
+
+/**
+ * Regles de presentation d'un message `notify` du bridge (17/10 soir, « nuit calme », lot de fins de tache) : pures, testees en JVM.
+ * Contrat serveur <-> natif (docs/PROTOCOL.md §11.14) : `silent`, `replaces`, `lot_update`, `fin_lot`, `held_sev`, `night_calm`.
+ */
+object NotifRules {
+  const val CAT_FIN = "aura-fin"
+
+  /** Sonne et s'affiche en tete d'ecran ? Gravite >= 2, sauf `silent` (nuit calme, mise a jour d'un lot) : un client d'avant
+   *  ignore `silent`, mais le bridge livre alors aussi la gravite 1 : meme resultat. */
+  fun isAlert(severity: Int, silent: Boolean): Boolean = severity >= 2 && !silent
+
+  /** Rattrapage pendant la nuit calme : se tait sauf pour une urgence (3) qui n'est pas une fin de tache. */
+  fun mutedByNight(n: JSONObject, nightCalm: Boolean): Boolean =
+    n.optBoolean("silent", false) ||
+      (nightCalm && (n.optInt("severity", 1) < 3 || n.optString("category") == CAT_FIN))
+
+  /** Canal Android d'une notification du bridge : « Fins de tache » pour `aura-fin`, sinon Alertes / Infos. */
+  fun channel(category: String, alert: Boolean, finChannel: String, alertChannel: String, infoChannel: String): String = when {
+    category == CAT_FIN -> finChannel
+    alert -> alertChannel
+    else -> infoChannel
+  }
+
+  /** Ids des notifications qu'un lot remplace (`replaces`) : seulement des ids bien formes, 50 au plus. */
+  fun replacedIds(msg: JSONObject, idRe: Regex): List<String> {
+    val a = msg.optJSONArray("replaces") ?: return emptyList()
+    return (0 until minOf(a.length(), 50)).mapNotNull { a.optString(it).takeIf { id -> idRe.matches(id) } }
+  }
+
+  // memes libelles que NOTIF_LABELS de la PWA. 17/10 : une notification sur sept (missions, superviseur, rapport)
+  // tombait sur le titre generique « Aura » ; les categories courantes du serveur sont ici, les autres passent par label()
+  private val LABELS = mapOf(
+    "media" to "Média", "night" to "Nuit", "aura-agenda" to "Agenda", "aura-sante" to "Santé",
+    "aura-rappel" to "Rappel", "memoire" to "Santé", "aura-conseil" to "Conseil", "aura" to "Aura",
+    "notifications" to "AURA", "aura-appel" to "Appel", "aura-mail" to "Mail",
+    "aura-fin" to "Tâche terminée", "aura-temps" to "Temps",
+    "aura-missions" to "Mission", "aura-superviseur" to "Superviseur", "aura-rapport" to "Rapport",
+    "aura-telephone" to "Téléphone",
+    "alerte" to "Alerte", "info" to "Info", "sante" to "Santé",
+  )
+
+  /** Libelle d'une categorie ; une `aura-xxx` inconnue devient « Xxx » (jamais le titre generique pour une categorie neuve). */
+  fun label(category: String): String =
+    LABELS[category] ?: category.removePrefix("aura-").takeIf { category.startsWith("aura-") && it.isNotBlank() }
+      ?.replace('-', ' ')?.replaceFirstChar { it.uppercase() } ?: "Aura"
 }
 
 /** Numero a rappeler d'une carte d'appel (apres_appel.py card()) : ligne « 📱 <numero> », sinon fin de la 1re ligne. */

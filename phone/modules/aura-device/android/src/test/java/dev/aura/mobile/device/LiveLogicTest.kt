@@ -59,8 +59,10 @@ class LiveLogicTest {
     assertNull("nom d'outil du PC : pas dans la puce", LiveLogic.chip(true, "Bash", true))
     assertNull(LiveLogic.chip(false, "Bash", false))
     assertNull(LiveLogic.chip(false, null, true))
-    assertEquals("Transcriptio", LiveLogic.chip(false, "transcription · vocal", true))  // 12 car. au plus
-    assertEquals(12, LiveLogic.chip(false, "UnNomD'OutilTresLong", true)!!.length)
+    assertNull("nom trop long : le chronometre plutot qu'un nom coupe", LiveLogic.chip(false, "transcription · vocal", true))
+    assertNull(LiveLogic.chip(false, "UnNomD'OutilTresLong", true))
+    assertEquals("WebSrch", LiveLogic.chip(false, "webSrch · aura", true))  // 7 car. pile
+    assertEquals("Read", LiveLogic.chip(false, "Read · /tmp/x", true))
   }
 
   // ─── run_state (PROTOCOL.md §11.D) ──────────────────────────────────────
@@ -118,5 +120,21 @@ class LiveLogicTest {
     val now = 1_000_000_000L
     val started = now - 300_000L   // le telephone le suit depuis 300 s
     assertEquals(started, LiveLogic.startedFrom(started, now, 120))   // le bridge dit 120 s : on garde le plus ancien
+  }
+
+  @Test fun promotion_seulement_pour_un_tour_long_lance_par_l_utilisateur() {
+    assertFalse("reponse courte d'ici : notification, pas de Now Bar", LiveLogic.promote(false, 0))
+    assertFalse(LiveLogic.promote(false, LiveLogic.PROMOTE_MS - 1))
+    assertTrue(LiveLogic.promote(false, LiveLogic.PROMOTE_MS))       // 30 s pile
+    assertFalse("tour du PC pas encore long : ni visible ni promu", LiveLogic.promote(true, 60_000))
+    assertTrue(LiveLogic.promote(true, LiveLogic.LONG_MS))
+  }
+
+  @Test fun prochain_changement_sans_message_du_bridge() {
+    assertEquals(30_000L, LiveLogic.nextChangeIn(false, 1_000L, 1_000L))
+    assertEquals(5_000L, LiveLogic.nextChangeIn(false, 0L, 25_000L))
+    assertEquals(0L, LiveLogic.nextChangeIn(false, 0L, 40_000L))      // deja promu : rien a attendre
+    assertEquals(90_000L, LiveLogic.nextChangeIn(true, 0L, 0L))
+    assertEquals(0L, LiveLogic.nextChangeIn(true, 0L, 500_000L))      // jamais negatif
   }
 }

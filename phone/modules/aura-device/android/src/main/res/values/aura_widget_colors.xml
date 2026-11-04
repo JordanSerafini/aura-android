@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget Aura : jetons générés (aura_tokens.xml, clair ; values-night/aura_tokens.xml, sombre). Charte du 22/10 : plus de
+     recopie à la main des valeurs de theme.generated.ts. -->
+<resources>
+  <color name="aura_widget_surface">@color/aura_tok_surface</color>
+  <color name="aura_widget_text">@color/aura_tok_text</color>
+  <color name="aura_widget_muted">@color/aura_tok_muted</color>
+  <color name="aura_widget_line">@color/aura_tok_line</color>
+  <color name="aura_widget_accent">@color/aura_tok_accent</color>
+</resources>

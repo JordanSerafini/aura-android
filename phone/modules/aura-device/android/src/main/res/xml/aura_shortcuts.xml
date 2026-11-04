@@ -1,6 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Raccourcis de l'icone (appui long) : pose sur MainActivity par plugins/withAuraAndroid.js -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Appareil (pause, permissions, journal) : joignable meme si la page du serveur n'a pas son propre bouton.
+       À traiter et Rappels : un appui long sur l'icone ouvre l'onglet de la page (aura://view/<onglet> -> #view=<onglet>,
+       App.hashOf). Ordre = rang dans le menu. -->
+  <shortcut
+    android:shortcutId="appareil"
+    android:enabled="true"
+    android:icon="@drawable/ic_aura"
+    android:shortcutShortLabel="@string/aura_shortcut_appareil"
+    android:shortcutLongLabel="@string/aura_shortcut_appareil_long">
+    <intent
+      android:action="android.intent.action.VIEW"
+      android:data="aura://appareil"
+      android:targetPackage="dev.aura.mobile"
+      android:targetClass="dev.aura.mobile.MainActivity" />
+  </shortcut>
+  <shortcut
+    android:shortcutId="actions"
+    android:enabled="true"
+    android:icon="@drawable/ic_aura_actions"
+    android:shortcutShortLabel="@string/aura_shortcut_actions"
+    android:shortcutLongLabel="@string/aura_shortcut_actions_long">
+    <intent
+      android:action="android.intent.action.VIEW"
+      android:data="aura://view/actions"
+      android:targetPackage="dev.aura.mobile"
+      android:targetClass="dev.aura.mobile.MainActivity" />
+  </shortcut>
+  <shortcut
+    android:shortcutId="rappels"
+    android:enabled="true"
+    android:icon="@drawable/ic_aura_rappels"
+    android:shortcutShortLabel="@string/aura_shortcut_rappels"
+    android:shortcutLongLabel="@string/aura_shortcut_rappels_long">
+    <intent
+      android:action="android.intent.action.VIEW"
+      android:data="aura://view/rappels"
+      android:targetPackage="dev.aura.mobile"
+      android:targetClass="dev.aura.mobile.MainActivity" />
+  </shortcut>
   <shortcut
     android:shortcutId="talk"
     android:enabled="true"

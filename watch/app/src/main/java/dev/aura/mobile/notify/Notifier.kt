@@ -126,40 +126,88 @@ object Notifier {
   @Suppress("MissingPermission")
   fun showConfirm(context: Context, pending: PendingConfirm): Boolean {
     if (!canNotify(context)) return false
-    val request = pending.request
-    val code = confirmNotificationId(request.actionId)
-    val full = PendingIntent.getActivity(
-      context,
-      code,
-      ConfirmActivity.intent(context, pending),
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
+    val n = confirmBuilder(context, pending)
+      .setContentTitle("Aura demande ton accord")
+      .setContentText(pending.request.summary)
+      .setStyle(NotificationCompat.BigTextStyle().bigText(pending.request.summary))
+      .setFullScreenIntent(confirmScreen(context, pending), true)
+      .setTimeoutAfter(pending.request.timeoutS.coerceAtLeast(1) * 1000L)
+      .build()
+    NotificationManagerCompat.from(context).notify(confirmNotificationId(pending.request.actionId), n)
+    return true
+  }
+
+  /**
+   * Réponse non remise (0.2.0) : « Téléphone injoignable ». `retry` et délai pas encore échu : la notification de la
+   * demande est remplacée (mêmes boutons Oui / Non pour réessayer, sans relancer l'écran plein écran) ; sinon une
+   * notification simple dit que la réponse n'est pas partie. La vibration longue est faite par l'appelant.
+   */
+  @Suppress("MissingPermission")
+  fun showConfirmUnreachable(context: Context, pending: PendingConfirm?, retry: Boolean): Boolean {
+    if (!canNotify(context)) return false
+    val summary = pending?.request?.summary.orEmpty()
+    val left = (pending?.deadlineMs ?: 0L) - System.currentTimeMillis()
+    val manager = NotificationManagerCompat.from(context)
+    if (retry && pending != null && left > 1_000L) {
+      val text = "Réponds sur le téléphone, ou réessaie ici." + if (summary.isNotBlank()) "\n$summary" else ""
+      val n = confirmBuilder(context, pending)
+        .setContentTitle(UNREACHABLE_TITLE)
+        .setContentText(text)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+        .setTimeoutAfter(left)
+        .build()
+      manager.notify(confirmNotificationId(pending.request.actionId), n)
+      return true
+    }
+    pending?.let { manager.cancel(confirmNotificationId(it.request.actionId)) }
+    val text = "Ta réponse n'est pas partie : réponds sur le téléphone." + if (summary.isNotBlank()) "\n$summary" else ""
+    val n = NotificationCompat.Builder(context, CHANNEL_CONFIRM)
+      .setSmallIcon(R.drawable.ic_aura)
+      .setContentTitle(UNREACHABLE_TITLE)
+      .setContentText(text)
+      .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+      .setPriority(NotificationCompat.PRIORITY_HIGH)
+      .setCategory(NotificationCompat.CATEGORY_ERROR)
+      .setContentIntent(openApp(context))
+      .setAutoCancel(true)
+      .setTimeoutAfter(UNREACHABLE_SHOWN_MS)
+      .build()
+    manager.notify(ID_CONFIRM_LOST, n)
+    return true
+  }
+
+  private const val UNREACHABLE_TITLE = "Téléphone injoignable"
+  private const val ID_CONFIRM_LOST = 2999
+  private const val UNREACHABLE_SHOWN_MS = 5 * 60_000L
+
+  private fun confirmScreen(context: Context, pending: PendingConfirm): PendingIntent = PendingIntent.getActivity(
+    context,
+    confirmNotificationId(pending.request.actionId),
+    ConfirmActivity.intent(context, pending),
+    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+  )
+
+  /** Base commune : canal, priorité, écran de confirmation au toucher, boutons Oui / Non (ConfirmReceiver). */
+  private fun confirmBuilder(context: Context, pending: PendingConfirm): NotificationCompat.Builder {
+    val code = confirmNotificationId(pending.request.actionId)
     fun action(ok: Boolean, label: String) = NotificationCompat.Action.Builder(
       if (ok) R.drawable.ic_check else R.drawable.ic_close,
       label,
       PendingIntent.getBroadcast(
         context,
         code * 2 + if (ok) 1 else 0,
-        ConfirmReceiver.intent(context, request.actionId, ok),
+        ConfirmReceiver.intent(context, pending, ok),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
       ),
     ).build()
-    val n = NotificationCompat.Builder(context, CHANNEL_CONFIRM)
+    return NotificationCompat.Builder(context, CHANNEL_CONFIRM)
       .setSmallIcon(R.drawable.ic_aura)
-      .setContentTitle("Aura demande ton accord")
-      .setContentText(request.summary)
-      .setStyle(NotificationCompat.BigTextStyle().bigText(request.summary))
       .setPriority(NotificationCompat.PRIORITY_MAX)
       .setCategory(NotificationCompat.CATEGORY_REMINDER)
-      .setFullScreenIntent(full, true)
-      .setContentIntent(full)
+      .setContentIntent(confirmScreen(context, pending))
       .addAction(action(true, "Oui"))
       .addAction(action(false, "Non"))
-      .setTimeoutAfter(request.timeoutS.coerceAtLeast(1) * 1000L)
       .setOngoing(true)
-      .build()
-    NotificationManagerCompat.from(context).notify(code, n)
-    return true
   }
 
   fun cancelConfirm(context: Context, actionId: String) =

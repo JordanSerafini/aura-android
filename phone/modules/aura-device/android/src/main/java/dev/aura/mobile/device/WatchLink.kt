@@ -189,14 +189,17 @@ class WatchLink {
 
   /** DataItem /aura/settings : JSON UTF-8 brut dans les donnees de l'item (docs/PROTOCOL.md §3). */
   fun pushSettings() {
-    Aura.pool.execute {
-      try {
-        val json = Aura.watchSettings().put("updated", System.currentTimeMillis())
-        val req = PutDataRequest.create("/aura/settings").setData(json.toString().toByteArray(Charsets.UTF_8)).setUrgent()
-        Tasks.await(dataClient.putDataItem(req), 15, TimeUnit.SECONDS)
-      } catch (e: Exception) {
-        Log.w(Aura.TAG, "reglages montre non publies", e)
-      }
-    }
+    Aura.pool.execute { pushSettingsNow() }
+  }
+
+  /** Meme publication, bloquante : true si Play Services a enregistre l'item (revue du 17/10 : l'ecran Montre n'avait aucun accuse). */
+  fun pushSettingsNow(): Boolean = try {
+    val json = Aura.watchSettings().put("updated", System.currentTimeMillis())
+    val req = PutDataRequest.create("/aura/settings").setData(json.toString().toByteArray(Charsets.UTF_8)).setUrgent()
+    Tasks.await(dataClient.putDataItem(req), 15, TimeUnit.SECONDS)
+    true
+  } catch (e: Exception) {
+    Log.w(Aura.TAG, "reglages montre non publies", e)
+    false
   }
 }
