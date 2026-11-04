@@ -67,15 +67,41 @@ class VadTest {
     vad.mode = Vad.Mode.BARGE
     // echo residuel du haut-parleur a -45 dBFS : sous le plancher BARGE (-38)
     assertTrue(run(vad, -45.0 to 2000).isEmpty())
-    // l'utilisateur reparle fort : detecte, mais apres 250 ms soutenues (pas 60)
+    // l'utilisateur reparle fort : detecte, mais apres 360 ms soutenues (pas 60 ; 250 jusqu'au 17/10)
     val ev = run(vad, -25.0 to 1000)
     assertEquals(Vad.Event.START, ev.first().first)
-    assertEquals(260, ev.first().second)
+    assertEquals(360, ev.first().second)  // 18 trames de 20 ms
   }
 
   @Test fun dbfs_d_une_sinusoide_pleine_echelle() {
     val s = ShortArray(320) { (Math.sin(it * 2 * Math.PI / 32) * 32767).toInt().toShort() }
     assertEquals(-3.0, Vad.dbfs(s), 0.2)
     assertEquals(-100.0, Vad.dbfs(ShortArray(320)), 0.0)
+  }
+
+  @Test fun grace_du_debut_de_lecture_puis_coupure() {
+    val vad = Vad()
+    run(vad, -65.0 to 1000)
+    vad.mode = Vad.Mode.BARGE
+    vad.grace(BargeInLogic.GRACE_MS)
+    // echo fort des 600 premieres ms de lecture (annulation d'echo pas encore calee) : rien
+    assertTrue(run(vad, -25.0 to 600).isEmpty())
+    // la grace passee, une voix soutenue coupe apres 360 ms
+    val ev = run(vad, -25.0 to 1000)
+    assertEquals(Vad.Event.START, ev.first().first)
+    assertEquals(360, ev.first().second)
+  }
+
+  @Test fun micro_coupe_ne_detecte_rien_et_ne_gonfle_pas_le_bruit() {
+    val vad = Vad()
+    run(vad, -65.0 to 1000)
+    val noise = vad.noiseDb
+    vad.mode = Vad.Mode.MUTED
+    assertTrue(run(vad, -20.0 to 3000, -40.0 to 3000).isEmpty())
+    assertEquals(noise, vad.noiseDb, 0.0)
+    assertEquals(-40.0, vad.lastDb, 0.0)  // le niveau reste mesure (orbe)
+    // retour a l'ecoute : detection normale
+    vad.mode = Vad.Mode.LISTEN
+    assertEquals(Vad.Event.START, run(vad, -30.0 to 200).first().first)
   }
 }

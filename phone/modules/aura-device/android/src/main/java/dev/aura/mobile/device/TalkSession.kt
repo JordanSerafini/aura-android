@@ -15,6 +15,7 @@ import kotlin.random.Random
  * Le micro ne s'arrete jamais pendant la session : en sending/thinking/speaking le Vad passe en mode
  * BARGE (seuil plus haut) ; si l'utilisateur reparle, la lecture s'arrete, `tts_cancel` + `cancel` partent et
  * sa nouvelle phrase est enregistree dans la foulee (coupure). 30 s sans parole : pause (micro coupe).
+ * Gardes anti-echo et reglage « Micro coupe pendant qu'Aura parle » (mode MUTED) : BargeInLogic.kt (1.5.0).
  *
  * Tout passe par une file mono-thread (`q`) : pas de verrou dans la machine d'etats.
  */
@@ -36,6 +37,10 @@ class TalkSession(private val emit: (JSONObject) -> Unit) : MicRecorder.Listener
   private var ended = false
   private var currentId: String? = null
   private var conv: String? = Aura.prefs.getString("test_conv", null)
+  /** Fin de phrase (envoi) -> 1er son lu, en ms (-1 = pas encore) ; les dernieres mesures pour l'ecran. */
+  private var sentAt = -1L
+  private var latencyMs = -1L
+  val latencies = java.util.concurrent.CopyOnWriteArrayList<Long>()
   private var tts: TtsQueue? = null
   private var replyDone = false
   private var transcript = ""
@@ -46,6 +51,10 @@ class TalkSession(private val emit: (JSONObject) -> Unit) : MicRecorder.Listener
   private var idleTimer: ScheduledFuture<*>? = null
   private var noAudioTimer: ScheduledFuture<*>? = null
   private var warmed = false
+  /** « Micro coupe pendant qu'Aura parle » (pref persistante, ecran Talk) : relu au demarrage, change par setMute. */
+  private var muteWhileSpeaking = BargeInLogic.muted(Aura.prefs.getString(BargeInLogic.PREF_MUTE, null))
+  /** Debut de la lecture en cours (ms), -1 sans lecture : grace anti-echo. */
+  private var playbackAt = -1L
 
   // ─── Commandes (depuis le module, thread quelconque) ────────────────────
 
@@ -62,6 +71,13 @@ class TalkSession(private val emit: (JSONObject) -> Unit) : MicRecorder.Listener
       "listening", "hearing" -> pause()
       else -> { interrupt(); listen() }
     }
+  }
+
+  /** Reglage « Micro coupe pendant qu'Aura parle » : applique tout de suite (la pref est ecrite par le module, talkSetMute). */
+  fun setMute(on: Boolean) = q.execute {
+    muteWhileSpeaking = on
+    if (BargeInLogic.busy(state)) vad.mode = BargeInLogic.modeFor(state, on)
+    publish()
   }
 
   fun stop() {
@@ -87,12 +103,15 @@ class TalkSession(private val emit: (JSONObject) -> Unit) : MicRecorder.Listener
     .put("level", level)
     .put("bluetooth", audio.bluetooth)
     .put("conv", conv ?: JSONObject.NULL)
+    .put("mute_speaking", muteWhileSpeaking)
+    .put("latency_ms", latencyMs)
 
   // ─── Machine d'etats (thread q) ─────────────────────────────────────────
 
   private fun listen() {
     error = null
     vad.mode = Vad.Mode.LISTEN
+    vad.grace(0)  // une grace non consommee (lecture plus courte que GRACE_MS) ne doit pas deborder sur la reponse suivante
     vad.reset()
     if (!mic.active) mic.start()
     setState("listening")
@@ -107,6 +126,7 @@ class TalkSession(private val emit: (JSONObject) -> Unit) : MicRecorder.Listener
 
   /** Coupe la reponse en cours (lecture + generation + synthese). */
   private fun interrupt() {
+    playbackAt = -1L
     noAudioTimer?.cancel(false)
     tts?.stop()
     tts = null
@@ -140,12 +160,17 @@ class TalkSession(private val emit: (JSONObject) -> Unit) : MicRecorder.Listener
     reply = ""
     tool = null
     tts = TtsQueue(player, this)
-    vad.mode = Vad.Mode.BARGE
+    playbackAt = -1L
+    vad.grace(0)
+    vad.mode = BargeInLogic.modeFor("sending", muteWhileSpeaking)
+    sentAt = System.currentTimeMillis()
+    latencyMs = -1L
     setState("sending")
     Aura.relay.submit(Relay.Req(id, payload, ReqSink(id), speak = true))
   }
 
   private fun backToListening() {
+    playbackAt = -1L
     noAudioTimer?.cancel(false)
     currentId = null
     tts = null
@@ -157,7 +182,15 @@ class TalkSession(private val emit: (JSONObject) -> Unit) : MicRecorder.Listener
   override fun onSpeechStart() = q.execute {
     if (ended) return@execute
     idleTimer?.cancel(false)
-    if (state in setOf("sending", "thinking", "speaking")) interrupt()  // coupure : l'utilisateur reparle
+    if (BargeInLogic.busy(state)) {
+      val since = if (playbackAt < 0) -1L else System.currentTimeMillis() - playbackAt
+      // micro coupe ou grace du debut de lecture (le Vad les filtre deja ; ceinture et bretelles) : on n'interrompt pas
+      if (!BargeInLogic.shouldInterrupt(state, muteWhileSpeaking, since)) {
+        vad.reset()
+        return@execute
+      }
+      interrupt()  // coupure : l'utilisateur reparle
+    }
     vad.mode = Vad.Mode.LISTEN
     if (!warmed) {
       warmed = true
@@ -189,7 +222,16 @@ class TalkSession(private val emit: (JSONObject) -> Unit) : MicRecorder.Listener
   // ─── Lecture ────────────────────────────────────────────────────────────
 
   override fun onPlaybackStart() = q.execute {
-    if (currentId != null && state != "hearing") setState("speaking")
+    if (currentId != null && state != "hearing") {
+      // grace anti-echo : chaque lecture repart d'un haut-parleur que l'annulation d'echo n'a pas encore appris
+      if (playbackAt < 0) { playbackAt = System.currentTimeMillis(); vad.grace(BargeInLogic.GRACE_MS) }
+      if (sentAt > 0 && latencyMs < 0) {  // fin de phrase -> 1er son (VAD 800 ms en plus, avant l'envoi)
+        latencyMs = playbackAt - sentAt
+        latencies.add(latencyMs)
+        while (latencies.size > 20) latencies.removeAt(0)
+      }
+      setState("speaking")
+    }
   }
 
   override fun onPlaybackFinished() = q.execute {

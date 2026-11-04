@@ -11,8 +11,11 @@ import kotlin.math.sqrt
  *
  * - LISTEN : ecoute normale, seuil = bruit + 10 dB (plancher -50 dBFS), debut apres 60 ms de voix.
  * - BARGE : pendant qu'Aura parle ou reflechit (coupure si l'utilisateur reparle) : seuil plus haut
- *   (bruit + 18 dB, plancher -38 dBFS) et 250 ms de voix soutenue, pour ne pas se declencher sur
- *   l'echo du haut-parleur que l'annulation d'echo n'aurait pas retire.
+ *   (bruit + 18 dB, plancher -38 dBFS) et BargeInLogic.MIN_VOICE_MS de voix soutenue (360 ms ; 250 jusqu'au 17/10),
+ *   pour ne pas se declencher sur l'echo du haut-parleur que l'annulation d'echo n'aurait pas retire. `grace(ms)` :
+ *   trames ignorees au debut d'une lecture (l'annulation d'echo converge).
+ * - MUTED : « Micro coupe pendant qu'Aura parle » : niveau mesure, aucune detection, bruit de fond fige (l'echo ne
+ *   doit pas le gonfler).
  * - Fin : 800 ms de silence apres au moins 200 ms de voix (sinon faux depart, ignore) ; 60 s max.
  */
 class Vad(
@@ -22,7 +25,7 @@ class Vad(
   val minVoicedMs: Int = 200,
   val calibrationMs: Int = 200,
 ) {
-  enum class Mode { LISTEN, BARGE }
+  enum class Mode { LISTEN, BARGE, MUTED }
   enum class Event { NONE, START, END_SILENCE, END_MAX, DISCARD }
 
   var mode = Mode.LISTEN
@@ -43,10 +46,17 @@ class Vad(
 
   fun threshold(): Double = when (mode) {
     Mode.LISTEN -> max(noiseDb + 10.0, -50.0)
-    Mode.BARGE -> max(noiseDb + 18.0, -38.0)
+    Mode.BARGE, Mode.MUTED -> max(noiseDb + 18.0, -38.0)
   }
 
-  private fun startMs(): Int = if (mode == Mode.BARGE) 250 else 60
+  private fun startMs(): Int = if (mode == Mode.LISTEN) 60 else BargeInLogic.MIN_VOICE_MS
+
+  /** Trames restantes a ignorer en BARGE (grace du debut de lecture) ; ecrit par la session, lu par le fil du micro. */
+  @Volatile private var graceLeftMs = 0
+
+  fun grace(ms: Int) {
+    graceLeftMs = ms.coerceAtLeast(0)
+  }
 
   /** Repart de zero (nouvelle ecoute) en gardant l'estimation du bruit. */
   fun reset() {
@@ -64,6 +74,17 @@ class Vad(
       calibFrames++
       calibSum += db
       noiseDb = calibSum / calibFrames
+      return Event.NONE
+    }
+    if (mode == Mode.MUTED) {
+      // micro coupe pendant qu'Aura parle : on mesure (l'orbe), on ne detecte rien, et une phrase commencee est oubliee
+      if (speaking) reset()
+      voicedRun = 0
+      return Event.NONE
+    }
+    if (mode == Mode.BARGE && !speaking && graceLeftMs > 0) {
+      graceLeftMs -= frameMs
+      voicedRun = 0
       return Event.NONE
     }
     val th = threshold()
