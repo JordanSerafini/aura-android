@@ -4,7 +4,7 @@ Android and Wear OS client for a personal AI orchestrator ("Aura") that runs on 
 
 **The server side is not included.** The orchestrator, its WebSocket bridge and the web UI that the chat tab loads are private and are not part of this repository. Without a compatible server the apps build and start, but they have nothing to connect to. This repository is published as a code sample of the client side: native Android services, a small protocol layer, and the tests around them.
 
-Status: personal project, used daily by its author on one phone and one watch. It is a snapshot of a private repository, published without its history. It has not been released on any app store.
+Status: personal project, used daily by its author on one phone and one watch. It is a snapshot of a private repository, published without its history, and refreshed from time to time (last refresh: November 2026). It has not been released on any app store.
 
 ## What the apps do
 
@@ -15,14 +15,23 @@ Phone app (`phone/`):
 - **Phone actions requested by the server.** The native executor handles these action names: SMS send and list, call (dial), call log, contacts search, notification list/reply/dismiss/open, messaging apps (WhatsApp, Messenger, Telegram, Signal, SMS), calendar list and add, alarm and timer, location, device status, app usage, volume, Do Not Disturb, ringer mode, flashlight, find my phone, media control, open app / URL, navigation, clipboard, e-mail compose, text to speech, camera snapshot, screen read, UI gestures through the accessibility service, and commands forwarded to the watch (notify, vibrate, heart rate, steps, battery).
 - **Safeguards on the device.** Outgoing actions can require an explicit confirmation (the app can only tighten what the server asks for, never relax it). A pause mode (apps only, or everything) is applied locally even when offline. UI gestures are restricted to a user-editable allow list of apps, with a hard-coded deny list (banking, payment, password managers, authenticators, system settings, the store). A journal screen records what was sent, filtered or blocked.
 - **Triggers sent by the phone.** Missed call, incoming call, notification from chosen apps, entering or leaving a zone, low battery, charger. Each type can be turned off, and only types for which the server has an active rule are sent.
-- **Voice.** A hands-free "Talk" conversation screen with voice activity detection and barge-in, a quick-settings tile, a launcher shortcut, and an implementation of the Android assistant role.
+- **Voice.** A hands-free "Talk" conversation screen with voice activity detection and barge-in, a quick-settings tile, a launcher shortcut, and an implementation of the Android assistant role. Barge-in needs a slightly longer stretch of voice than before and ignores the first frames of playback, and an option keeps the mic muted while Aura speaks (tap the orb to interrupt instead).
 - **Share target.** Text, links, images and PDFs can be shared to the app from other apps.
-- **Notifications.** Live Update style progress notification while the orchestrator works on a request, grouped missed-call notifications with a "call back" action that opens the dialer, and call cards.
+- **Notifications.** Live Update style progress notification while the orchestrator works on a request, grouped missed-call notifications with a "call back" action that opens the dialer, and call cards. Finished tasks get their own channel; the server can batch them (one notification replaces the individual ones) and mark them silent at night, and every category the server uses has a readable title.
+- **Home screen widgets.** A small widget (items waiting for a decision, unread notifications, a mic button) and an "Aura HUD" widget in three sizes that shows a status feed pushed by the server: alerts, next appointment, to-do items with Done buttons, system state, running tasks. The same feed can also appear in the persistent notification, as an Android 16 Live Update for a serious alert or a close appointment, in a quick-settings tile and on the watch. Each surface can be turned off.
+- **Native screens.** A Device screen grouped in sections (pause, permissions, HUD, automations, journal, watch, settings), a first-launch assistant that asks for permissions one step at a time, and a bottom bar that mirrors the web UI's own (Chat, Notifications, To do, More). The Device screen opens from the web UI when the page offers a button for it; otherwise the app adds a small round button over the page, and a launcher shortcut leads there too. Light and dark themes follow the system, or the choice made in the web UI.
+- **Shared design tokens.** Colours, sizes and radii come from the web UI's stylesheet through `phone/scripts/sync-theme.mjs`, which writes the TypeScript, Kotlin and XML versions; a test checks that the three agree and that text and controls keep WCAG AA contrast. Fonts: Space Grotesk and Geist Mono (SIL OFL 1.1, licences next to the files). App icon: an orb drawn in SVG (`phone/assets/icon/`) and rendered by `phone/scripts/render-icons.cjs`.
+- **Helpers for the web UI.** Copy and share sheet for a reply, semantic haptics, and a "what I copied" hint: the app tells the web UI how old a text copied elsewhere is, and reads its content only when asked. Only the configured web UI can use these; a payment detail (IBAN, card, crypto address) is never copied this way, and a full pause blocks both copy and read.
+- **Launcher shortcuts** to the Device screen, to the web UI's to-do and reminders views, and to the Talk screen.
+- **Network changes.** When the default network changes (Wi-Fi, mobile data, VPN) the WebSocket is recycled at once instead of waiting for a dead connection to time out.
 
 Watch app (`watch/`, Wear OS, Kotlin and Compose):
 
 - Voice remote: record, send, read or hear the reply, quick reply chips, typed input.
 - Tile and complication, confirmation screens for actions that need approval, a pause control.
+- "Aura HUD" tile and complication fed by the phone (alert count, next appointment, items to handle).
+- Approvals are queued (oldest first) and an approval that could not be delivered to the phone is reported instead of being lost silently. Status banners say when the phone or the server cannot be reached and when a pause request failed.
+- Dark palette tuned for OLED screens, a lighter animation when the battery matters, and launch counters (numbers only) sent to the phone.
 - Heart rate and step reading on request from the server.
 - The watch talks only to the paired phone through the Wearable Data Layer; the phone relays to the server.
 
@@ -43,8 +52,8 @@ Watch app (`watch/`, Wear OS, Kotlin and Compose):
                                              | Expo module bridge          | web UI         |
                              +---------------v---------------+  WebView    | (chat, notes)  |
                              | React Native UI (TypeScript)  | <---------> +----------------+
-                             |  tabs: Aura, Phone, Actions,  |
-                             |  Watch, Settings, Talk        |
+                             |  screens: Aura, Device, Talk, |
+                             |  first-launch assistant       |
                              +-------------------------------+
 ```
 
@@ -54,6 +63,18 @@ Watch app (`watch/`, Wear OS, Kotlin and Compose):
 - Pure logic (parsing, planning, guards, state machines) is kept in Android-free Kotlin files such as `BridgeLogic.kt`, `UiGuard.kt`, `PauseLogic.kt` and `MissedLogic.kt`, and is covered by JVM unit tests.
 
 Some source comments refer to sections of an internal protocol document (`PROTOCOL.md`). That document is not published. Comments and UI strings are mostly in French.
+
+### Not in this repository
+
+The private app has a few more features that are not published here, either because they depend on the author's own server and setup, or because they would need a different design to be safe in a generic build:
+
+- a "hub" mode for a tablet left on a stand (wake word, timers, home screen);
+- a floating bubble that can read the current screen on request;
+- self-update of the APK from the server;
+- automatic fallback between several addresses of the server (the private version ends on a plain-text address that a release build here refuses);
+- a card that approves a server request in one tap, outside the confirmation floor described above;
+- animated characters used as icons and mascots;
+- a few screens tied to the author's own use.
 
 ## Configuration
 
@@ -89,6 +110,8 @@ cd android && ./gradlew assembleDebug
 ```
 
 `phone/scripts/build.sh` chains these steps for a signed release build (it needs the signing variables above).
+
+`node --test phone/scripts/sync-theme.test.mjs` checks the design tokens. The comparison with the web UI's stylesheet only runs when `AURA_PWA_CSS` points to it (the stylesheet belongs to the server); `node phone/scripts/sync-theme.mjs --css <path>` regenerates the tokens.
 
 `phone/scripts/jvm-tests/run.sh` runs the pure Kotlin logic tests of the native module on the JVM, without `expo prebuild` or `node_modules` (it borrows the watch's Gradle wrapper, offline). Tests that touch Android classes are skipped there; the full suite stays `./gradlew :aura-device:testReleaseUnitTest` after a prebuild.
 
