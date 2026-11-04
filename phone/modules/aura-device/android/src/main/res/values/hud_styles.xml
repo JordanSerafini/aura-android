@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Bouton d'un élément du widget « Aura HUD » : cible de 48 dp -->
+  <style name="HudBtn">
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:layout_height">48dp</item>
+    <item name="android:layout_marginEnd">6dp</item>
+    <item name="android:background">@drawable/hud_btn</item>
+    <item name="android:gravity">center</item>
+    <item name="android:minWidth">72dp</item>
+    <item name="android:paddingStart">10dp</item>
+    <item name="android:paddingEnd">10dp</item>
+    <item name="android:textColor">@color/hud_text</item>
+    <item name="android:textSize">12sp</item>
+    <item name="android:textStyle">bold</item>
+    <item name="android:visibility">gone</item>
+  </style>
+</resources>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget « À traiter » (17/10 soir) : 4 x 1, redimensionnable en largeur ; onUpdate toutes les 30 min ne refait que le
+     libelle « à 21:40 » (les nombres viennent de l'app, cf. AuraWidget.kt) -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+  android:description="@string/aura_widget_description"
+  android:initialLayout="@layout/aura_widget"
+  android:minHeight="40dp"
+  android:minWidth="250dp"
+  android:previewLayout="@layout/aura_widget"
+  android:resizeMode="horizontal"
+  android:targetCellHeight="1"
+  android:targetCellWidth="4"
+  android:updatePeriodMillis="1800000"
+  android:widgetCategory="home_screen" />

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget « Aura HUD » : en-tête de section de la liste (ALERTES · 14, PLANNING · AUJOURD'HUI…) -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/hud_sec"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:fontFamily="sans-serif-condensed"
+  android:letterSpacing="0.15"
+  android:paddingTop="12dp"
+  android:paddingBottom="4dp"
+  android:textColor="@color/hud_violet"
+  android:textSize="12sp"
+  android:textStyle="bold" />

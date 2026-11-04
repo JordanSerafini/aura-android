@@ -38,6 +38,8 @@ object WatchStatus {
     .put("missed", MissedCalls.groups())
     .put("times", TimeProposals.count())
     .put("bridge", Aura.bridge.status)
+    // 1.9.0 : resume du HUD pour la tuile et la complication « Aura HUD » de la montre 0.3.0 (PROTOCOL.md §35)
+    .apply { if (HudSurfaces.watchOn()) HudLogic.watchBrief(HudStore.feed(Aura.app), HudStore.at(Aura.app), nowS * 1000, java.time.ZoneId.systemDefault())?.let { put("hud", it) } }
 
   fun push(force: Boolean = false) {
     if (!Aura.watch.connected()) return

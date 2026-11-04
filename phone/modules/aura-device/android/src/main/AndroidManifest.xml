@@ -47,6 +47,36 @@
   <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
   <application>
+    <!-- Widget d'ecran d'accueil « À traiter · Notifs · micro » (AuraWidget.kt) -->
+    <receiver
+      android:name="dev.aura.mobile.device.AuraWidget"
+      android:exported="false"
+      android:label="@string/aura_widget_label">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/aura_widget_info" />
+    </receiver>
+
+    <!-- Widget « Aura HUD » (AuraHudWidget.kt) : le HUD du serveur (alertes, agenda, à traiter) sur l'écran d'accueil -->
+    <receiver
+      android:name="dev.aura.mobile.device.AuraHudWidget"
+      android:exported="false"
+      android:label="@string/hud_widget_label">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/aura_hud_widget_info" />
+    </receiver>
+    <!-- Relais d'un appui dans la liste du widget HUD : ouvre l'app ou renvoie l'action au widget, sans rien afficher -->
+    <activity
+      android:name="dev.aura.mobile.device.HudTapActivity"
+      android:excludeFromRecents="true"
+      android:exported="false"
+      android:noHistory="true"
+      android:taskAffinity=""
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
     <!-- Service de premier plan : WebSocket vers le bridge + relais montre -->
     <service
       android:name="dev.aura.mobile.device.AuraService"
@@ -166,6 +196,19 @@
       <intent-filter>
         <action android:name="android.service.quicksettings.action.QS_TILE" />
       </intent-filter>
+    </service>
+
+    <!-- Tuile Réglages rapides « Aura HUD » (HudSurfaces.kt) : état du HUD en sous-titre, toucher = ouvrir Aura -->
+    <service
+      android:name="dev.aura.mobile.device.HudTileService"
+      android:exported="true"
+      android:icon="@drawable/ic_aura"
+      android:label="@string/hud_widget_label"
+      android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+      <intent-filter>
+        <action android:name="android.service.quicksettings.action.QS_TILE" />
+      </intent-filter>
+      <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
     </service>
 
     <!-- « Rappeler » d'un appel manque : ouvre le composeur (MissedCalls.kt), sans vue -->

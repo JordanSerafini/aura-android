@@ -16,6 +16,23 @@ object LiveLogic {
 
   fun visible(foreign: Boolean, elapsedMs: Long): Boolean = !foreign || elapsedMs >= LONG_MS
 
+  /**
+   * Promotion (Now Bar, puce de la barre d'etat, ecran verrouille d'Android 16) : seulement pour un tour LONG d'une tache
+   * que l'utilisateur a lancee (1.5.0). Google reserve les Live Updates aux activites en cours lancees par l'utilisateur et
+   * exclut alertes, messages et agenda : une reponse de 5 s n'a rien a faire dans la Now Bar. Demande partie d'ici :
+   * promue a 30 s (le bridge commence ses run_state a 30 s, §11.D) ; tour d'ailleurs : des qu'il est visible (90 s).
+   * Avant, la promotion etait demandee des le premier mot.
+   */
+  const val PROMOTE_MS = 30_000L
+
+  fun promote(foreign: Boolean, elapsedMs: Long): Boolean = visible(foreign, elapsedMs) && elapsedMs >= (if (foreign) LONG_MS else PROMOTE_MS)
+
+  /** Delai avant le prochain changement d'aspect sans message du bridge (apparition ou promotion), 0 = aucun a attendre. */
+  fun nextChangeIn(foreign: Boolean, startedMs: Long, nowMs: Long): Long {
+    val at = startedMs + if (foreign) LONG_MS else PROMOTE_MS
+    return (at - nowMs).coerceAtLeast(0L)
+  }
+
   /** Delai avant que ce tour devienne visible (0 = deja visible). */
   fun dueIn(foreign: Boolean, startedMs: Long, nowMs: Long): Long = if (!foreign) 0L else (startedMs + LONG_MS - nowMs).coerceAtLeast(0L)
 
@@ -45,9 +62,18 @@ object LiveLogic {
     return head.replaceFirstChar { it.uppercase() }.take(24)
   }
 
-  /** Puce de la barre d'etat : l'outil en cours (12 car.) ; jamais pour un tour etranger, la puce se voit verrouille. */
-  fun chip(foreign: Boolean, tool: String?, toolActive: Boolean): String? =
-    if (foreign || !toolActive || tool == null) null else toolName(tool).take(12)
+  /**
+   * Puce de la barre d'etat (`setShortCriticalText`) : l'outil en cours s'il tient en CHIP_MAX caracteres (Bash, Read,
+   * Edit…), sinon rien et le chronometre (setWhen) s'y affiche ; un nom coupe (« Transcriptio ») ne disait rien. Jamais
+   * pour un tour etranger : la puce se voit ecran verrouille.
+   */
+  const val CHIP_MAX = 7
+
+  fun chip(foreign: Boolean, tool: String?, toolActive: Boolean): String? {
+    if (foreign || !toolActive || tool == null) return null
+    val name = toolName(tool)
+    return if (name.length <= CHIP_MAX) name else null
+  }
 
   // ─── run_state (PROTOCOL.md §11.D) : la progression vient du bridge, pas d'une minuterie du telephone ───
 

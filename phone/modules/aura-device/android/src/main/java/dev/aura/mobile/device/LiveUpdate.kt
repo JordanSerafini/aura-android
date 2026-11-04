@@ -148,7 +148,6 @@ object LiveUpdate {
     }
     return false
   }
-
   private fun suppressed(): Boolean = overlay || Aura.appForeground && screen in SELF_SCREENS
 
   /** Tour le plus recent encore vivant ET visible (un tour etranger attend d'etre long), null s'il n'y a rien a montrer. */
@@ -158,11 +157,23 @@ object LiveUpdate {
     turns.values.filter { LiveLogic.visible(it.foreign, now - it.started) }.maxByOrNull { it.lastEvent }
   }
 
-  /** Delai avant que le prochain tour etranger devienne long, null s'il n'y en a pas : sans nouveau message, rien ne rappellerait render. */
+  /**
+   * Delai avant le prochain changement d'aspect (un tour etranger qui devient long, une demande d'ici qui merite la
+   * promotion), null s'il n'y en a pas : sans nouveau message, rien ne rappellerait render.
+   */
   private fun nextDue(): Long? = synchronized(this) {
     val now = System.currentTimeMillis()
     // un tour suivi par run_state n'a pas besoin de minuterie : chaque run_state (5 s) rappelle render
-    turns.values.filter { it.foreign && !it.serverDriven }.map { LiveLogic.dueIn(true, it.started, now) }.filter { it > 0 }.minOrNull()
+    turns.values.filter { !it.serverDriven }.map { LiveLogic.nextChangeIn(it.foreign, it.started, now) }.filter { it > 0 }.minOrNull()
+  }
+
+  private fun scheduleNext() {
+    nextDue()?.let { due ->
+      synchronized(this) {
+        dueTask?.cancel(false)
+        dueTask = Aura.timer.schedule(Runnable { render(force = true) }, due + 50, TimeUnit.MILLISECONDS)
+      }
+    }
   }
 
   private fun render(force: Boolean) {
@@ -185,12 +196,7 @@ object LiveUpdate {
         shown = false
       }
       // un tour etranger devient visible a 90 s meme s'il ne dit plus rien (outil long)
-      nextDue()?.let { due ->
-        synchronized(this) {
-          dueTask?.cancel(false)
-          dueTask = Aura.timer.schedule(Runnable { render(force = true) }, due + 50, TimeUnit.MILLISECONDS)
-        }
-      }
+      scheduleNext()
       return
     }
     try {
@@ -199,6 +205,8 @@ object LiveUpdate {
     } catch (e: Exception) {
       Log.w(Aura.TAG, "Live Update non affiche", e)
     }
+    // une demande d'ici devient promue a 30 s meme sans nouveau message (bridge sans run_state)
+    scheduleNext()
   }
 
   /** « Bash · date » -> « Bash » ; « transcription » -> « Transcription ». */
@@ -232,8 +240,12 @@ object LiveUpdate {
     } else null
     val private = LiveLogic.lockScreenPrivate(t.foreign)
     val nm = ctx.getSystemService(NotificationManager::class.java)
+    val promote = LiveLogic.promote(t.foreign, System.currentTimeMillis() - t.started)
     if (Build.VERSION.SDK_INT >= 36) {
-      // Notification.Builder natif : NotificationCompat 1.13 ne connait ni ProgressStyle ni la promotion
+      // Notification.Builder natif : NotificationCompat 1.13 ne connait ni ProgressStyle ni la promotion.
+      // Conditions de promotion d'Android 16 (developer.android.com/develop/ui/views/notifications/live-update) :
+      // ongoing, titre, style standard ou ProgressStyle, ni RemoteViews perso, ni colorisee, ni resume de groupe,
+      // canal pas IMPORTANCE_MIN (CH_LIVE : DEFAULT), permission POST_PROMOTED_NOTIFICATIONS (manifeste du module).
       val b = Notification.Builder(ctx, Notifs.CH_LIVE)
         .setSmallIcon(R.drawable.ic_aura)
         .setContentTitle(title)
@@ -247,6 +259,7 @@ object LiveUpdate {
         .setVisibility(if (private) Notification.VISIBILITY_PRIVATE else Notification.VISIBILITY_PUBLIC)
         .setContentIntent(Notifs.launchAppIntent(ctx))
         .setStyle(Notification.ProgressStyle().setProgressIndeterminate(true))
+        .setColorized(false)
       if (private) {
         // tour du PC : ecran verrouille = titre neutre seulement (ni texte streame ni outil)
         b.setPublicVersion(
@@ -257,7 +270,9 @@ object LiveUpdate {
       // puce de la barre d'etat : l'outil en cours ; sans outil, le chronometre (setWhen) s'y affiche
       LiveLogic.chip(t.foreign, t.tool, t.toolActive)?.let { b.setShortCriticalText(it) }
       if (stop != null) b.addAction(Notification.Action.Builder(null, "Arrêter", stop).build())
-      b.extras.putBoolean(EXTRA_REQUEST_PROMOTED, true)
+      // = Notification.Builder.setRequestPromotedOngoing(true) (API 36.1, absente du SDK 36.0 de ce build) : meme extra.
+      // Seulement pour un tour long d'une tache lancee par l'utilisateur (LiveLogic.promote) ; avant, des le premier mot.
+      if (promote) b.extras.putBoolean(EXTRA_REQUEST_PROMOTED, true)
       nm.notify(Notifs.ID_LIVE, b.build())
       return
     }

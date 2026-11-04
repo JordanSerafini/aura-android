@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget « Aura HUD » (22/10, AuraHudWidget.kt) : redimensionnable 2x2 -> 4x4 et plus. onUpdate toutes les 30 min =
+     repli par HTTP si le flux poussé par le bridge a plus de 15 min (sinon rien : pas de réseau, pas de réveil). -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+  android:description="@string/hud_widget_description"
+  android:initialLayout="@layout/hud_widget_medium"
+  android:minHeight="110dp"
+  android:minWidth="110dp"
+  android:minResizeHeight="100dp"
+  android:minResizeWidth="100dp"
+  android:previewLayout="@layout/hud_widget_medium"
+  android:resizeMode="horizontal|vertical"
+  android:targetCellHeight="2"
+  android:targetCellWidth="4"
+  android:updatePeriodMillis="1800000"
+  android:widgetCategory="home_screen" />

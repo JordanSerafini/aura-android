@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget « Aura HUD » (22/10) : « instrument de nuit », toujours sombre (comme le HUD plein écran du poste). Charte du
+     22/10 (lot 19) : plus de teintes propres, tout vient des jetons sombres fixes générés (aura_tokens.xml, aura_tok_night_*). -->
+<resources>
+  <color name="hud_bg">@color/aura_tok_night_glass_bg</color>
+  <color name="hud_bg2">@color/aura_tok_night_glass_surface2</color>
+  <color name="hud_line">@color/aura_tok_night_line</color>
+  <color name="hud_text">@color/aura_tok_night_text</color>
+  <color name="hud_muted">@color/aura_tok_night_muted</color>
+  <color name="hud_violet">@color/aura_tok_night_accent</color>
+  <color name="hud_green">@color/aura_tok_night_ok</color>
+  <color name="hud_amber">@color/aura_tok_night_alert</color>
+  <color name="hud_red">@color/aura_tok_night_danger</color>
+  <color name="hud_cyan">@color/aura_tok_night_aura_cyan</color>
+</resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Noyau du widget HUD (nombre d'alertes) : anneau de la couleur de gravité, comme le noyau du HUD du PC -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+  <solid android:color="#26000000" />
+  <stroke android:width="3dp" android:color="@color/hud_amber" />
+</shape>
