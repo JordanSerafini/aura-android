@@ -14,7 +14,7 @@ class UrlGuardTest {
 
   @Test fun http_et_https_passent_nettoyes() {
     assertEquals("https://exemple.fr/page?x=1#a", UrlGuard.webUrl("  https://exemple.fr/page?x=1#a \n"))
-    assertEquals("http://192.168.1.10:8080/", UrlGuard.webUrl("http://192.168.1.10:8080/"))
+    assertEquals("http://192.168.0.20:8080/", UrlGuard.webUrl("http://192.168.0.20:8080/"))
     assertEquals("HTTPS://EXEMPLE.FR", UrlGuard.webUrl("HTTPS://EXEMPLE.FR"))
   }
 

@@ -52,9 +52,9 @@ class BornesEtTrousTest {
 
   // ─── PhoneContext (ContextLogic) ────────────────────────────────────────
   @Test fun le_fuseau_horaire_est_un_changement_notable() {
-    assertEquals("tz", ContextLogic.notable(ctx("tz" to "Europe/Paris"), ctx("tz" to "Asia/Bangkok")))
+    assertEquals("tz", ContextLogic.notable(ctx("tz" to "Europe/Paris"), ctx("tz" to "America/New_York")))
     assertNull(ContextLogic.notable(ctx("tz" to "Europe/Paris"), ctx("tz" to "Europe/Paris")))
-    assertEquals("tz", ContextLogic.notable(ctx(), ctx("tz" to "Asia/Bangkok")))  // 1re valeur connue
+    assertEquals("tz", ContextLogic.notable(ctx(), ctx("tz" to "America/New_York")))  // 1re valeur connue
   }
 
   @Test fun bornes_exactes_de_batterie_et_de_deplacement() {
