@@ -2,6 +2,8 @@ package dev.aura.mobile.protocol
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.time.Instant
+import java.time.ZoneId
 
 /*
  * Etat publie par le telephone pour la tuile et la complication (DataItem `/aura/status`, PROTOCOL.md §10) et
@@ -31,6 +33,8 @@ data class AuraStatus(
   val missed: Int = 0,
   /** Temps non saisis a valider (PROTOCOL.md §11.11) ; absent d'un telephone plus ancien = 0. */
   val times: Int = 0,
+  /** Resume du HUD du PC (telephone 1.9.0, PROTOCOL.md §35) ; absent = pas de HUD (telephone plus ancien ou reglage coupe). */
+  val hud: HudBrief? = null,
 )
 
 /** `/aura/pause_set` : montre -> telephone. */
@@ -113,13 +117,98 @@ object StatusLogic {
       status.bridge == "online" -> "Connecté" to Tone.OK
       status.bridge == "connecting" -> "Connexion…" to Tone.DIM
       status.bridge == "rejected" -> "Appareil refusé" to Tone.BAD
+      status.bridge == "stopped" -> "Aura arrêtée" to Tone.BAD
       else -> "PC hors ligne" to Tone.BAD
     }
     return TileModel(headline, tone, confirms, paused, button)
   }
 
-  /** Complication courte : texte (7 car. au plus), titre, description d'accessibilite. */
-  data class ComplicationModel(val text: String, val title: String, val description: String)
+  /**
+   * Tuile apres un appui « Pause » dont l'envoi a echoue (0.2.0) : le bandeau le dit quelques secondes, en tete, et
+   * l'etat affiche reste le vrai (rien d'optimiste n'est applique sans envoi).
+   */
+  const val PAUSE_FAILED_SHOWN_MS = 8_000L
+  const val PAUSE_FAILED_TEXT = "Échec, téléphone injoignable"
+
+  fun pauseFailedShown(failedAtMs: Long, nowMs: Long): Boolean = failedAtMs > 0L && (nowMs - failedAtMs) in 0L until PAUSE_FAILED_SHOWN_MS
+
+  fun tileAfterPauseFailure(model: TileModel, failedAtMs: Long, nowMs: Long): TileModel =
+    if (pauseFailedShown(failedAtMs, nowMs)) model.copy(headline = PAUSE_FAILED_TEXT, tone = Tone.BAD) else model
+
+  // ─── Ecran principal (0.2.0) ────────────────────────────────────────────
+
+  /** Bandeau d'etat de l'ecran principal : titre, precision facultative, ton. */
+  data class Banner(val text: String, val detail: String? = null, val tone: Tone)
+
+  /** « En pause (apps) jusqu'a 18:30 », « … jusqu'a demain 09:00 », « … jusqu'au 20/10 09:00 », « … jusqu'a la reprise ». */
+  fun pauseText(mode: String, until: Long, nowS: Long, zone: ZoneId): String {
+    val base = if (mode == PauseModes.ALL) "En pause totale" else "En pause (apps)"
+    if (until <= 0L) return "$base jusqu'à la reprise"
+    val end = Instant.ofEpochSecond(until).atZone(zone)
+    val today = Instant.ofEpochSecond(nowS).atZone(zone).toLocalDate()
+    val hm = "%02d:%02d".format(end.hour, end.minute)
+    return when (end.toLocalDate()) {
+      today -> "$base jusqu'à $hm"
+      today.plusDays(1) -> "$base jusqu'à demain $hm"
+      else -> "$base jusqu'au %02d/%02d $hm".format(end.dayOfMonth, end.monthValue)
+    }
+  }
+
+  /** Lien telephone <-> PC, tel que le publie le telephone (`bridge`) ; null = en ligne, rien a dire. */
+  fun pcBanner(bridge: String): Banner? = when (bridge) {
+    "online" -> null
+    "connecting" -> Banner("Connexion au PC…", null, Tone.DIM)
+    "rejected" -> Banner("Téléphone refusé par le PC", "Réappaire le téléphone dans l'app", Tone.BAD)
+    "stopped" -> Banner("Aura arrêtée sur le téléphone", "Relance-la depuis l'app du téléphone", Tone.BAD)
+    else -> Banner("PC hors ligne", "Aura ne peut pas répondre pour l'instant", Tone.BAD)
+  }
+
+  /**
+   * Bandeau de l'ecran principal : meme priorite que la tuile (telephone injoignable, pause, etat perime, PC). Rien
+   * quand tout va bien, ni quand aucun etat n'a jamais ete recu (pas d'alarme inventee, comme la tuile).
+   */
+  fun banner(status: AuraStatus?, phoneReachable: Boolean?, nowS: Long, zone: ZoneId): Banner? {
+    if (phoneReachable == false) return Banner("Téléphone injoignable", "Vérifie le Bluetooth et l'app Aura du téléphone", Tone.BAD)
+    if (status == null) return null
+    val mode = pauseMode(status, nowS)
+    val stale = stale(status, nowS)
+    return when {
+      mode != PauseModes.OFF -> {
+        val detail = if (stale) staleDetail(status, nowS) else pcBanner(status.bridge)?.text
+        Banner(pauseText(mode, status.pause.until, nowS, zone), detail, Tone.WARN)
+      }
+      stale -> Banner("État inconnu", staleDetail(status, nowS), Tone.DIM)
+      else -> pcBanner(status.bridge)
+    }
+  }
+
+  /** « Pas de nouvelles du téléphone depuis 12 min » (ou « … depuis 2 h »). */
+  fun staleDetail(status: AuraStatus, nowS: Long): String {
+    if (status.updated <= 0L) return "Pas de nouvelles du téléphone"
+    val min = ((nowS - status.updated / 1000) / 60).coerceAtLeast(0)
+    return if (min < 120) "Pas de nouvelles du téléphone depuis $min min" else "Pas de nouvelles du téléphone depuis ${min / 60} h"
+  }
+
+  /** Pastille « N à valider » de l'ecran principal ; `canOpen` = la montre connait une demande a rouvrir. */
+  data class PendingChip(val label: String, val detail: String, val canOpen: Boolean)
+
+  /**
+   * `localLive` : demandes encore ouvertes connues de la montre (ConfirmQueue). Le compte du telephone ne vaut que s'il
+   * est frais ; les demandes connues localement comptent toujours (on les a vues arriver).
+   */
+  fun pendingChip(status: AuraStatus?, nowS: Long, localLive: Int): PendingChip? {
+    val remote = if (status != null && !stale(status, nowS)) status.confirms.coerceAtLeast(0) else 0
+    val n = maxOf(remote, localLive.coerceAtLeast(0))
+    if (n <= 0) return null
+    val label = if (n > 99) "99+ à valider" else "$n à valider"
+    return if (localLive > 0) PendingChip(label, "Toucher pour répondre", true) else PendingChip(label, "Réponds sur le téléphone", false)
+  }
+
+  /**
+   * Complication courte : texte (7 car. au plus), titre, description d'accessibilite. `openConfirm` (0.2.0) : le toucher
+   * ouvre la demande en attente (la plus ancienne connue de la montre) au lieu de l'ecran principal.
+   */
+  data class ComplicationModel(val text: String, val title: String, val description: String, val openConfirm: Boolean = false)
 
   /** Nombre de choses a faire (numeros a rappeler + temps a valider), positif ou nul. */
   fun todo(status: AuraStatus?): Int = (status?.missed ?: 0).coerceAtLeast(0) + (status?.times ?: 0).coerceAtLeast(0)
@@ -154,7 +243,7 @@ object StatusLogic {
       mode != PauseModes.OFF -> ComplicationModel("Pause", "Aura", "Aura en pause, ouvrir")
       status == null || stale(status, nowS) -> ComplicationModel("?", "Aura", "État d'Aura inconnu, ouvrir")
       confirms > 0 -> ComplicationModel(if (confirms > 99) "99+" else confirms.toString(), "À valider",
-        if (confirms == 1) "1 confirmation en attente" else "$confirms confirmations en attente")
+        if (confirms == 1) "1 confirmation en attente" else "$confirms confirmations en attente", openConfirm = true)
       // appels manques a rappeler et temps a valider (01/10 soir) : une confirmation demandee a l'utilisateur passe avant, la pause et
       // l'etat inconnu aussi ; le PC hors ligne ne cache pas ce qui reste a faire
       todo(status) > 0 -> todoModel(status).let { it.copy(description = it.description + ", ouvrir") }

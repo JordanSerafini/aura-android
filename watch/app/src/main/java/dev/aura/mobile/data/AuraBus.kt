@@ -31,7 +31,8 @@ object AuraBus {
   val status = MutableStateFlow<AuraStatus?>(null)
   val playing = MutableStateFlow(false)
   val phoneReachable = MutableStateFlow<Boolean?>(null)
-  val confirm = MutableStateFlow<PendingConfirm?>(null)
+  /** Demandes d'accord encore ouvertes connues de la montre (ConfirmQueue, la plus ancienne d'abord). */
+  val confirms = MutableStateFlow<List<PendingConfirm>>(emptyList())
   /** Onglets ouverts relayés par le S22 ; null = jamais reçus (le téléphone n'a pas encore répondu). */
   val convs = MutableStateFlow<ConvList?>(null)
   /** Heure (ms) de la dernière `/aura/convs` reçue : l'écran Conversations y lit si le S22 a répondu. */
