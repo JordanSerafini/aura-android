@@ -281,13 +281,32 @@ object PhoneContext {
         .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.token), 20, TimeUnit.SECONDS)
     } catch (e: Exception) { /* repli derniere position */ }
     val l = loc ?: lastLocation() ?: throw ActionError("unavailable", "Position introuvable (GPS coupé ?)")
-    val zones = mergeZone(zones(), clean, l.latitude, l.longitude, radiusM.coerceIn(50, 5000).toDouble())
+    val current = zones()
+    // remplacer une zone garde son rayon (avant : 150 m d'office, un rayon de 300 m retombait sans le dire)
+    val radius = ContextLogic.radiusOf(current, clean) ?: radiusM.coerceIn(50, 5000).toDouble()
+    val zones = mergeZone(current, clean, l.latitude, l.longitude, radius)
     if (!Aura.bridge.send(JSONObject().put("type", "settings_set").put("phone_zones", zones))) {
       throw ActionError("unavailable", "Envoi impossible : connexion perdue")
     }
     return JSONObject().put("name", clean).put("lat", l.latitude).put("lon", l.longitude)
-      .put("accuracy", l.accuracy.toDouble()).put("radius_m", radiusM).put("zones", zones.length())
+      .put("accuracy", l.accuracy.toDouble()).put("radius_m", radius).put("zones", zones.length())
   }
+
+  /**
+   * « Effacer la zone <nom> » (ecran Appareil, 17/10 soir) : la liste complete SANS elle part en settings_set.phone_zones
+   * (le bridge remplace la liste entiere, §7.3). Une zone absente : rien n'est envoye.
+   */
+  fun removeZone(name: String): JSONObject {
+    if (!Aura.bridge.online()) throw ActionError("unavailable", "Serveur injoignable : réessaie une fois connecté")
+    val current = zones()
+    val zones = ContextLogic.withoutZone(current, name)
+    if (zones.length() == current.length()) throw ActionError("not_found", "Zone « ${name.trim()} » inconnue du serveur")
+    if (!Aura.bridge.send(JSONObject().put("type", "settings_set").put("phone_zones", zones))) {
+      throw ActionError("unavailable", "Envoi impossible : connexion perdue")
+    }
+    return JSONObject().put("name", name.trim()).put("zones", zones.length())
+  }
+
 
   fun mergeZone(existing: JSONArray, name: String, lat: Double, lon: Double, radius: Double): JSONArray =
     ContextLogic.mergeZone(existing, name, lat, lon, radius)

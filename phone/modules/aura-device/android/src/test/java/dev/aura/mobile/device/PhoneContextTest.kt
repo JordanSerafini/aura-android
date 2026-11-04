@@ -49,4 +49,24 @@ class PhoneContextTest {
     assertEquals(5.0, out.getJSONObject(1).getDouble("lat"), 0.0)
     assertEquals(3, ContextLogic.mergeZone(zones, "Salle", 0.0, 0.0, 100.0).length())
   }
+
+  @Test fun effacer_une_zone_garde_les_autres() {
+    val zones = JSONArray()
+      .put(JSONObject().put("name", "Maison").put("lat", 1.0).put("lon", 2.0).put("radius_m", 200.0))
+      .put(JSONObject().put("name", "Travail").put("lat", 3.0).put("lon", 4.0).put("radius_m", 150.0))
+    val out = ContextLogic.withoutZone(zones, "  maison ")
+    assertEquals(1, out.length())
+    assertEquals("Travail", out.getJSONObject(0).getString("name"))
+    assertEquals("zone inconnue : liste inchangee", 2, ContextLogic.withoutZone(zones, "Salle").length())
+    assertEquals(0, ContextLogic.withoutZone(JSONArray(), "Maison").length())
+  }
+
+  @Test fun remplacer_une_zone_garde_son_rayon() {
+    val zones = JSONArray()
+      .put(JSONObject().put("name", "Maison").put("lat", 1.0).put("lon", 2.0).put("radius_m", 300.0))
+      .put(JSONObject().put("name", "Travail").put("lat", 3.0).put("lon", 4.0).put("radius_m", 9999.0))
+    assertEquals(300.0, ContextLogic.radiusOf(zones, "MAISON")!!, 0.0)
+    assertNull("rayon hors bornes : le defaut s'applique", ContextLogic.radiusOf(zones, "Travail"))
+    assertNull("zone absente", ContextLogic.radiusOf(zones, "Salle"))
+  }
 }

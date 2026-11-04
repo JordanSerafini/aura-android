@@ -3,8 +3,10 @@ package dev.aura.mobile.device
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.json.JSONObject
 import org.junit.Test
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 class UsageLogicTest {
   private val today = LocalDate.of(2026, 10, 1)
@@ -19,7 +21,10 @@ class UsageLogicTest {
 
   @Test fun tous_les_noms_utilises_par_l_app_sont_valides() {
     val kinds = EventsWantedLogic.KNOWN
-    val names = listOf("ecran.aura", "ecran.telephone", "ecran.actions", "ecran.montre", "ecran.reglages", "ecran.journal", "ecran.talk",
+    // App.tsx (écrans), DeviceScreen (sections), AuraDeviceModule (démarrage), AuraWearService / WatchRelay / montre (1.4.0)
+    val names = listOf("ecran.aura", "ecran.hub", "ecran.appareil", "ecran.assistant", "ecran.talk",
+      "ecran.pause", "ecran.permissions", "ecran.automatisations", "ecran.journal", "ecran.montre", "ecran.reglages",
+      "app.demarrage", "app.prefs_neuves", "montre.voix", "montre.confirmation", "montre.reponse_lue", "montre.tuile",
       "tuile.dicter", "notif.rappeler", "notif.tout_valider", "notif.annuler_reprise", "notif.copier", "time.confirme", "time.annule",
       "pause.activee", "pause.levee", "fiche_appel.affichee") +
       kinds.flatMap { listOf("evt.envoye.$it", "evt.filtre.$it", "evt.antispam.$it") }
@@ -60,6 +65,55 @@ class UsageLogicTest {
     assertTrue(UsageLogic.due(null, "2026-10-01", b))
     assertTrue(UsageLogic.due("2026-09-30", "2026-10-01", b))
     assertFalse("deja parti aujourd'hui", UsageLogic.due("2026-10-01", "2026-10-01", b))
+  }
+
+  // ─── Tranches de 6 h (1.4.0) ────────────────────────────────────────────
+
+  @Test fun tranche_de_six_heures() {
+    assertEquals("2026-10-09T0", UsageLogic.slot(LocalDateTime.of(2026, 10, 9, 0, 15)))
+    assertEquals("2026-10-09T0", UsageLogic.slot(LocalDateTime.of(2026, 10, 9, 5, 59)))
+    assertEquals("2026-10-09T1", UsageLogic.slot(LocalDateTime.of(2026, 10, 9, 6, 0)))
+    assertEquals("2026-10-09T3", UsageLogic.slot(LocalDateTime.of(2026, 10, 9, 23, 59)))
+    assertEquals(0, 24 % UsageLogic.SLOT_HOURS)
+  }
+
+  @Test fun la_journee_en_cours_part_le_jour_meme() {
+    // le 09/10 : envoi de 00:18 (veille), puis plus rien jusqu'au lendemain ; désormais un envoi par tranche
+    val b = buckets()
+    val night = LocalDateTime.of(2026, 10, 9, 0, 18)
+    UsageLogic.add(b, "2026-10-09", "ecran.aura", 2)
+    assertTrue(UsageLogic.due(null, UsageLogic.slot(night), b))
+    UsageLogic.subtract(b, UsageLogic.reports(b, "s22-natif", night.toLocalDate()))
+    val sentSlot = UsageLogic.slot(night)
+    UsageLogic.add(b, "2026-10-09", "evt.envoye.charger", 1)
+    assertFalse("même tranche : rien ne repart", UsageLogic.due(sentSlot, UsageLogic.slot(night.plusHours(3)), b))
+    assertTrue("tranche suivante : la journée en cours part", UsageLogic.due(sentSlot, UsageLogic.slot(night.withHour(12)), b))
+    assertEquals(listOf("2026-10-09"), UsageLogic.reports(b, "s22-natif", night.toLocalDate()).map { it.day })
+  }
+
+  @Test fun l_ancienne_cle_par_jour_ne_bloque_pas_l_envoi() {
+    val b = buckets()
+    UsageLogic.add(b, "2026-10-09", "ecran.aura")
+    // une 1.3.1 a écrit « 2026-10-09 » (un jour) : jamais égal à une tranche, l'envoi reste dû
+    assertTrue(UsageLogic.due("2026-10-09", UsageLogic.slot(LocalDateTime.of(2026, 10, 9, 14, 0)), b))
+  }
+
+  // ─── Démarrage à froid, montre (1.4.0) ──────────────────────────────────
+
+  @Test fun demarrage_a_froid_et_prefs_neuves() {
+    assertEquals(listOf("app.demarrage", "app.prefs_neuves"), UsageLogic.coldStartCounters(hasSince = false, hasLegacyMarker = false))
+    assertEquals("mise à jour depuis 1.3.1 : pas une installation neuve", listOf("app.demarrage"),
+      UsageLogic.coldStartCounters(hasSince = false, hasLegacyMarker = true))
+    assertEquals(listOf("app.demarrage"), UsageLogic.coldStartCounters(hasSince = true, hasLegacyMarker = false))
+  }
+
+  @Test fun compteurs_de_la_montre_ranges_et_bornes() {
+    val m = JSONObject("""{"counters":{"tuile":1,"voix":250,"Mauvais":1,"texte":"abc","zero":0,"x.y":1}}""")
+    val got = UsageLogic.watchCounters(m)
+    assertEquals(listOf("montre.tuile" to 1, "montre.voix" to UsageLogic.WATCH_MAX_PER_MESSAGE), got)
+    for ((name, _) in got) assertTrue(UsageLogic.validName(name))
+    assertTrue(UsageLogic.watchCounters(JSONObject("{}")).isEmpty())
+    assertTrue(UsageLogic.watchCounters(JSONObject("""{"counters":[1,2]}""")).isEmpty())
   }
 
   @Test fun apres_l_envoi_le_reste_de_la_journee_part_le_lendemain_sous_son_jour() {

@@ -10,7 +10,7 @@ object ContextLogic {
 
   /** Motif du changement notable, null s'il n'y en a pas (logique pure, testee en JVM). */
   fun notable(prev: JSONObject, cur: JSONObject): String? {
-    // tz (03/10, mode voyage du bridge : desktop_bridge/fuseau.py) : arriver a Bangkok est un changement notable
+    // tz (03/10, mode voyage du serveur) : changer de fuseau en voyage est un changement notable
     for (k in listOf("charging", "network", "headphones", "dnd", "ringer", "tz")) {
       if (prev.opt(k)?.toString() != cur.opt(k)?.toString()) return if (k == "charging") "charging" else k
     }
@@ -53,5 +53,30 @@ object ContextLogic {
     val zone = JSONObject().put("name", name).put("lat", lat).put("lon", lon).put("radius_m", radius)
     val list = (0 until out.length()).map { out.getJSONObject(it) }.takeLast(9) + zone
     return JSONArray(list)
+  }
+
+  /** Rayon de la zone de ce nom (casse et espaces ignores), null si elle n'existe pas ou si son rayon est illisible. */
+  fun radiusOf(existing: JSONArray, name: String): Double? {
+    val key = name.trim().replace(Regex("\\s+"), " ")
+    for (i in 0 until existing.length()) {
+      val z = existing.optJSONObject(i) ?: continue
+      if (!z.optString("name").trim().replace(Regex("\\s+"), " ").equals(key, ignoreCase = true)) continue
+      val r = z.optDouble("radius_m", Double.NaN)
+      return if (r.isNaN() || r < 50 || r > 5000) null else r
+    }
+    return null
+  }
+
+  /** Fusion pure (testee en JVM) : la liste sans la zone de ce nom (casse et espaces ignores), memes champs que mergeZone. */
+  fun withoutZone(existing: JSONArray, name: String): JSONArray {
+    val key = name.trim().replace(Regex("\\s+"), " ")
+    val out = JSONArray()
+    for (i in 0 until existing.length()) {
+      val z = existing.optJSONObject(i) ?: continue
+      if (z.optString("name").trim().replace(Regex("\\s+"), " ").equals(key, ignoreCase = true)) continue
+      out.put(JSONObject().put("name", z.optString("name")).put("lat", z.optDouble("lat"))
+        .put("lon", z.optDouble("lon")).put("radius_m", z.optDouble("radius_m", 150.0)))
+    }
+    return out
   }
 }

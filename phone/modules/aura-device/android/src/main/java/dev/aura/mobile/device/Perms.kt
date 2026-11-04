@@ -30,7 +30,9 @@ object Perms {
   fun locationBackground(): Boolean = Build.VERSION.SDK_INT < 29 || granted(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
   fun hasTelephony(): Boolean = ctx.packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY)
   /** Aura est-elle l'assistant numerique ? (role perdu a chaque reinstallation de l'APK) */
-  fun assistant(): Boolean = try {
+  // RoleManager n'existe qu'a partir d'Android 10 : sur Android 8-9 l'appel levait
+  // NoClassDefFoundError (une Error, pas une Exception) et faisait tomber l'app des le 1er ecran
+  fun assistant(): Boolean = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) false else try {
     val rm = ctx.getSystemService(android.app.role.RoleManager::class.java)
     rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) &&
       rm.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT)
@@ -64,7 +66,7 @@ object Perms {
 
   /** Leve permission:<nom> (nom = cle de status()) si la permission manque. */
   fun require(name: String, ok: Boolean) {
-    if (!ok) throw ActionError("permission:$name", "Permission manquante sur le téléphone : $name (onglet Actions de l'app Aura)")
+    if (!ok) throw ActionError("permission:$name", "Permission manquante sur le téléphone : $name (app Aura : Appareil → Permissions)")
   }
 
   fun requireRuntime(name: String, p: String) = require(name, granted(p))
