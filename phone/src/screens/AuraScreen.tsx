@@ -1,25 +1,17 @@
 import { useFocusEffect } from "@react-navigation/native"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ActivityIndicator, BackHandler, Dimensions, Keyboard, Linking, StyleSheet, Text, useWindowDimensions, View } from "react-native"
+import { AppState, BackHandler, Dimensions, Keyboard, Linking, useWindowDimensions, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { setStatusBarStyle } from "expo-status-bar"
 import { WebView, type WebViewMessageEvent } from "react-native-webview"
 import type { ShouldStartLoadRequest } from "react-native-webview/lib/WebViewTypes"
-import { DEVICE_TOKEN, POSTE, PWA_ORIGIN, PWA_URL, theme } from "../config"
-import { AuraDevice } from "../native"
-import { Button } from "../ui"
+import { DEVICE_TOKEN, POSTE, PWA_ORIGIN, PWA_URL } from "../config"
 import { externalUrl, isPwaUrlOf, splitUrl } from "../linkGuards"
+import { AuraDevice } from "../native"
+import { asThemePref, makeStyles, useThemePref } from "../theme"
+import { Message } from "../ui"
+import type { DeviceParams, DeviceSection } from "./DeviceScreen"
 
 const PAIRED_KEY = "pwa_paired"
-
-// « rgb(r, g, b) » ou « rgba(r, g, b, a) » -> { hex, light } ; null si la couleur est transparente ou illisible
-export function parseWebBg(css: unknown): { hex: string, light: boolean } | null {
-  const m = typeof css === "string" ? /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(css) : null
-  if (!m || (m[4] !== undefined && Number(m[4]) < 1)) return null
-  const [r, g, b] = [m[1], m[2], m[3]].map((x) => Math.min(255, Number(x)))
-  const hex = "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("")
-  return { hex, light: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.5 }
-}
 
 // URL servie par la PWA : origine EGALE, pas un prefixe (garde et raison dans linkGuards.ts, testee par check-link-guards.mjs).
 export function isPwaUrl(url: string): boolean {
@@ -51,10 +43,25 @@ export function httpErrorMessage(status: number, url: string): string | null {
 }
 
 // Taille de police du systeme (Parametres → Affichage → Taille de la police), bornee : sous 100 % la PWA deviendrait
-// illisible, au-dela de 130 % son en-tete deborde. Avant : 100 fixe, le reglage du systeme etait ignore.
-export function webTextZoom(fontScale: number): number {
+// illisible, au-dela de 160 % son en-tete deborde. Avant : 100 fixe, le reglage du systeme etait ignore ; puis borne a 130 %,
+// mais a 200 % de police systeme le chat restait a 130 % alors que les ecrans natifs suivaient (revue du 17/10) : 160 %, la
+// PWA ayant corrige son en-tete pour tenir a cette taille.
+export function webTextZoom(fontScale: number, max = 1.6): number {
   const f = Number.isFinite(fontScale) && fontScale > 0 ? fontScale : 1
-  return Math.round(Math.min(1.3, Math.max(1, f)) * 100)
+  return Math.round(Math.min(max, Math.max(1, f)) * 100)
+}
+
+// Échec de chargement par RÉSOLUTION DE NOM (Android : net::ERR_NAME_NOT_RESOLVED), pas un refus ni un délai.
+export function isNameNotResolved(description: string | undefined): boolean {
+  return /ERR_NAME_NOT_RESOLVED|ERR_NAME_RESOLUTION_FAILED/i.test(description ?? "")
+}
+
+// Un message par panne : « vérifie le réseau » envoyait chercher la mauvaise panne quand c'est le NOM du serveur qui ne
+// se résout pas (DNS du VPN coupé, VPN bien connecté). Les erreurs HTTP ont déjà leur propre explication.
+export function errorHint(error: string): string {
+  if (isNameNotResolved(error)) return "Le nom du serveur ne se résout pas (DNS du VPN coupé ?)."
+  if (/HTTP \d{3}/.test(error)) return "Réessaie dans un instant ; si ça dure, regarde le serveur."
+  return "Vérifie la connexion réseau (VPN éventuel) du téléphone et que le serveur est allumé."
 }
 
 function initialUrl(): string {
@@ -65,41 +72,33 @@ function initialUrl(): string {
   return PWA_URL
 }
 
-// Injecte dans la PWA : trois boutons dans l'en-tete (la barre d'onglets native est masquee sur cet onglet) :
-// 🎧 conversation vocale, ⚙ « Réglages du téléphone » (acces direct a l'onglet Réglages natif) et 📱 « Téléphone »
-// (accueil des ecrans natifs : etat, pause, journal, permissions, montre). La PWA a ses propres reglages (son menu) :
-// les deux ne portent plus le meme nom. + la mesure de env(safe-area-inset-bottom), que la WebView ne rapporte pas
-// partout : si elle vaut 0, c'est l'app qui reserve la place de la barre systeme, sinon la PWA le fait deja et on
-// n'ajoute rien (sinon bande vide). Chaque bouton fait 48 px de haut et de large (cible tactile) pour un dessin de
-// 34 px, sans agrandir l'en-tete (marges negatives). Defensif : si l'en-tete change de forme, les boutons flottent
-// en haut a droite.
+// Retour Android : qui le prend ? `pwa` = la PWA a quelque chose à défaire (dernier back_state.can) ; `web` = historique
+// de la WebView ; `exit` = on ne consomme pas (navigation des écrans natifs, puis sortie de l'app).
+export type BackStep = "pwa" | "web" | "exit"
+export function backStep(pwaCan: boolean, webCanGoBack: boolean): BackStep {
+  return pwaCan ? "pwa" : webCanGoBack ? "web" : "exit"
+}
+// La PWA ferme sa feuille du dessus, sinon remonte son historique, sinon revient au Chat ; puis renvoie back_state.
+export const PWA_BACK = "window.__auraBack && window.__auraBack(); true"
+
+// Injecté dans la PWA. `__auraNativeV = 2` lui dit que cette app connaît `open_device` (avec section) et `open_talk` ; `3`
+// (1.4.9, 17/10 soir) : `haptic` (effet système joué par l'app au lieu de navigator.vibrate) ; `4` (1.5.0) : Retour
+// Android confié à la PWA (`back_state` → `window.__auraBack()`, voir backStep) ; `5` (1.6.0, 21/10) : gestes du PC portés
+// au S22, `copy_text`, `share_text` (feuille de partage), `clip_read` + window.__auraClipHint / __auraClip (§32). La PWA
+// renvoie ses pastilles (`badges`) pour la barre des écrans natifs. + la mesure de env(safe-area-inset-bottom), que la WebView
+// ne rapporte pas partout : si elle vaut 0, c'est l'app qui réserve la place de la barre système, sinon la PWA le fait déjà.
+// + le thème choisi dans Réglages → Apparence de la PWA (clé aura.theme : auto | light | dark), relayé au natif qui le suit.
+// Une page qui porte elle-même l'accès à l'écran Appareil le dit en définissant window.__auraDeviceBadge. Sinon (tout autre
+// serveur), un bouton rond est posé en bas à droite : sans lui, pause, liste blanche, journal et permissions seraient
+// introuvables après l'assistant de premier lancement. Raccourci de l'icône : aura://appareil.
 const INJECT = `(() => {
-  if (window.__auraNative) return; window.__auraNative = true
+  if (window.__auraNative) return; window.__auraNative = true; window.__auraNativeV = 5
   const post = (m) => window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(m))
   const probe = document.createElement("div")
   probe.style.cssText = "position:fixed;bottom:0;height:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden"
   const measure = () => post({ type: "insets", bottom: parseFloat(getComputedStyle(probe).paddingBottom) || 0 })
-  // la CSP de la PWA (style-src 'self') bloque toute balise <style> injectee : styles poses par le CSSOM
-  const put = (el, props) => { for (const k in props) el.style.setProperty(k, props[k], "important") }
-  const mk = (label, glyph, type) => {
-    const b = document.createElement("button")
-    b.type = "button"
-    put(b, { margin: "-7px 0 -7px 3px", "min-height": "0", height: "48px", width: "48px", padding: "0", flex: "none", border: "0",
-      background: "transparent", position: "relative", "box-shadow": "none", color: "inherit", display: "flex", "align-items": "center",
-      "justify-content": "center" })
-    const face = document.createElement("span")
-    face.setAttribute("aria-hidden", "true")
-    put(face, { display: "block", height: "34px", width: "34px", border: "1px solid rgba(127,127,127,.35)", "border-radius": "999px",
-      "font-size": "17px", "line-height": "32px", "text-align": "center" })
-    face.textContent = glyph
-    b.appendChild(face); b.setAttribute("aria-label", label)
-    b.addEventListener("click", () => post({ type }))
-    return b
-  }
-  const btn = mk("Téléphone : état, journal, permissions, montre", "📱", "open_phone")
-  const gear = mk("Réglages du téléphone", "⚙️", "open_settings")
-  // bouton 🎧 : mode conversation vocale natif (TalkScreen), mains libres
-  const talk = mk("Conversation vocale", "🎧", "open_talk")
+  // thème de la PWA : à l'ouverture, puis à chaque changement (applyTheme pose ou retire data-theme sur <html>)
+  const theme = () => { let v = "auto"; try { v = localStorage.getItem("aura.theme") || "auto" } catch (e) { /* stockage refusé */ } post({ type: "theme", value: v }) }
   // Live Update : l'app native suit les demandes parties de cette PWA (id des chat/voice envoyes). Le
   // prototype est patche, donc la socket deja ouverte par la PWA est couverte aussi.
   const WS = window.WebSocket
@@ -116,61 +115,68 @@ const INJECT = `(() => {
       return send.apply(this, arguments)
     }
   }
-  window.__auraBadge = (n) => {
-    let b = btn.querySelector("b")
-    if (!n) { if (b) b.remove(); return }
-    if (!b) {
-      b = document.createElement("b")
-      put(b, { position: "absolute", top: "1px", right: "1px", "min-width": "18px", height: "18px", "border-radius": "9px",
-        background: "#e5484d", color: "#fff", "font-size": "11px", "line-height": "18px", padding: "0 4px" })
-      btn.appendChild(b)
-    }
-    b.textContent = String(n)
+  // bouton de repli vers l'écran Appareil, retiré dès que la page déclare son propre accès
+  let fab = null
+  const fallback = () => {
+    if (window.__auraDeviceBadge) { if (fab) { fab.remove(); fab = null } return }
+    if (fab) return
+    fab = document.createElement("button")
+    fab.type = "button"; fab.textContent = "⚙"
+    fab.setAttribute("aria-label", "Appareil : pause, permissions, journal, réglages")
+    fab.style.cssText = "position:fixed;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:2147483646;" +
+      "width:48px;height:48px;padding:0;border-radius:24px;border:1px solid rgba(127,127,127,.4);" +
+      "background:rgba(14,16,23,.85);color:#fff;font-size:20px;line-height:46px;text-align:center"
+    fab.addEventListener("click", () => post({ type: "open_device" }))
+    document.body.appendChild(fab)
   }
-  // couleur de l'en-tete de la PWA (theme clair/sombre : systeme ou reglage Apparence) : l'app colore sous l'encoche et
-  // sous la barre de navigation avec, sinon une bande sombre restait au-dessus d'une PWA claire
-  const sendTheme = () => { const h = document.querySelector("header.top") || document.body; post({ type: "theme", bg: getComputedStyle(h).backgroundColor }) }
-  const watchTheme = () => {
-    sendTheme(); setTimeout(sendTheme, 400)
-    new MutationObserver(() => { sendTheme(); setTimeout(sendTheme, 400) }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] })
-    if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(sendTheme, 50))
+  // pastille de « Plus » et de sa tuile Appareil (page qui porte son accès) ; sinon, pastille du bouton de repli
+  window.__auraBadge = (n) => {
+    if (window.__auraDeviceBadge) { window.__auraDeviceBadge(n); return }
+    if (fab) fab.textContent = n ? "⚙ " + Math.min(99, Number(n) || 0) : "⚙"
   }
   const mount = () => {
     document.body.appendChild(probe)
-    const header = document.querySelector("header.top"); const status = document.getElementById("status")
-    if (header && status) { put(status, { "margin-left": "auto" }); header.appendChild(talk); header.appendChild(gear); header.appendChild(btn) }
-    else {
-      put(btn, { position: "fixed", top: "calc(env(safe-area-inset-top) + 4px)", right: "4px", "z-index": "99", margin: "0" }); document.body.appendChild(btn)
-      put(gear, { position: "fixed", top: "calc(env(safe-area-inset-top) + 4px)", right: "52px", "z-index": "99", margin: "0" }); document.body.appendChild(gear)
-      put(talk, { position: "fixed", top: "calc(env(safe-area-inset-top) + 4px)", right: "100px", "z-index": "99", margin: "0" }); document.body.appendChild(talk)
-    }
-    measure(); addEventListener("resize", measure); watchTheme()
+    measure(); addEventListener("resize", measure)
+    theme(); new MutationObserver(theme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] })
+    setTimeout(fallback, 2000); setTimeout(fallback, 8000)
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount()
 })(); true`
 
-type Props = { onOpenPhone: () => void, onOpenSettings: () => void, onOpenTalk?: () => void, openHash?: { hash: string, n: number } | null, badge?: number }
+// pastilles de la PWA (message `badges`, refonte du 15/10), reprises par la barre du bas des écrans natifs
+export type PwaBadges = { notifs: number, backlog: number, rappels: number, chat: number, actions: number }
 
-export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, openHash, badge = 0 }: Props) {
+const DEVICE_SECTIONS: DeviceSection[] = ["pause", "permissions", "hud", "automatisations", "journal", "montre", "reglages"]
+const count = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.min(99, Math.floor(n)) : 0 }
+
+type Props = { onOpenDevice: (params?: DeviceParams) => void, onOpenTalk?: () => void,
+  onBadges?: (b: PwaBadges) => void, openHash?: { hash: string, n: number } | null, badge?: number }
+
+export default function AuraScreen({ onOpenDevice, onOpenTalk, onBadges, openHash, badge = 0 }: Props) {
+  const st = useStyles()
+  const [, setThemePref] = useThemePref()
   const insets = useSafeAreaInsets()
   const { fontScale } = useWindowDimensions()
   const [webBottom, setWebBottom] = useState<number | null>(null)
   const [kb, setKb] = useState(0)
   const ref = useRef<WebView>(null)
   const canGoBack = useRef(false)
+  // dernier `back_state.can` de la PWA ; remis à faux à chaque chargement (une page neuve n'a rien à défaire)
+  const pwaCanBack = useRef(false)
   const [url] = useState(initialUrl)
   const [error, setError] = useState<string | null>(null)
   const [key, setKey] = useState(0)
-  const [webBg, setWebBg] = useState<{ hex: string, light: boolean } | null>(null)
 
-  // bouton retour Android = retour dans la WebView, tant qu'elle a un historique
+  // Retour Android (1.5.0, contrat §26 de PROTOCOL.md) : la PWA dit par `back_state` si ELLE a quelque chose à défaire
+  // (feuille ou dialogue ouvert, historique interne, onglet autre que Chat) ; alors on lui passe le Retour
+  // (window.__auraBack). Sinon l'historique de la WebView, sinon le Retour sort (écran d'avant, ou l'app se ferme).
+  // Une PWA d'avant ne dit jamais `back_state` : on garde le comportement d'avant (historique de la WebView).
   useFocusEffect(useCallback(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (canGoBack.current) {
-        ref.current?.goBack()
-        return true
-      }
-      return false
+      const step = backStep(pwaCanBack.current, canGoBack.current)
+      if (step === "pwa") ref.current?.injectJavaScript(PWA_BACK)
+      else if (step === "web") ref.current?.goBack()
+      return step !== "exit"
     })
     return () => sub.remove()
   }, []))
@@ -185,19 +191,33 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
       const fromTop = Dimensions.get("screen").height - e.endCoordinates.screenY
       setKb(Math.max(e.endCoordinates.height, fromTop))
     })
-    const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0))
+    const hide = Keyboard.addListener("keyboardDidHide", () => {
+      setKb(0)
+      // geste Retour : le champ garde le focus et la PWA garde sa barre masquee ; on le lui retire (15/10)
+      ref.current?.injectJavaScript("document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+    })
     return () => { show.remove(); hide.remove() }
   }, [])
-
-  // icones de la barre d'etat lisibles sur la couleur de la PWA ; les autres onglets (sombres) retrouvent « light » en la quittant
-  useFocusEffect(useCallback(() => {
-    if (webBg) setStatusBarStyle(webBg.light ? "dark" : "light")
-    return () => setStatusBarStyle("light")
-  }, [webBg]))
 
   useEffect(() => {
     ref.current?.injectJavaScript(`window.__auraBadge && window.__auraBadge(${badge}); true`)
   }, [badge])
+
+  // « Ce que j'ai copié » (1.6.0) : au retour au premier plan, si la PWA est chargée. Le natif ne rend que l'âge d'un
+  // texte copié ailleurs (jamais le contenu) ; 500 ms : la fenêtre doit avoir le focus pour lire la description.
+  const pwaReady = useRef(false)
+  const checkClip = useCallback(() => {
+    setTimeout(() => {
+      if (!pwaReady.current) return
+      const h = AuraDevice.clipHint?.() ?? ""
+      if (h) ref.current?.injectJavaScript(`window.__auraClipHint && window.__auraClipHint(${h}); true`)
+    }, 500)
+  }, [])
+  useFocusEffect(useCallback(() => {
+    checkClip()
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active") checkClip() })
+    return () => sub.remove()
+  }, [checkClip]))
 
   // conversation demandee par le partage ou l'assistant (#conv=<id>), onglet Notifs ou bouton d'une
   // notification Android (#notifs, #notif-act=<id>) : la PWA reagit au hashchange ; hors ligne, elle
@@ -210,16 +230,32 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
   }, [openHash])
 
   const onMessage = useCallback((e: WebViewMessageEvent) => {
+    // seule la page du serveur configure parle au natif (presse-papiers, ecrans) : une page data:, about: ou d'un autre
+    // domaine chargee dans la WebView n'est pas ecoutee
+    if (!isPwaUrl(e.nativeEvent.url)) return
     try {
       const m = JSON.parse(e.nativeEvent.data)
-      if (m.type === "open_phone") onOpenPhone()
-      else if (m.type === "open_settings") onOpenSettings()
+      if (m.type === "open_phone") onOpenDevice()
+      else if (m.type === "open_settings") onOpenDevice({ section: "reglages", n: Date.now() })
+      else if (m.type === "open_device") {
+        const section = DEVICE_SECTIONS.find((x) => x === m.section)
+        onOpenDevice(section ? { section, n: Date.now() } : undefined)
+      }
       else if (m.type === "open_talk") onOpenTalk?.()
-      else if (m.type === "theme") setWebBg(parseWebBg(m.bg))
+      else if (m.type === "badges") onBadges?.({ notifs: count(m.notifs), backlog: count(m.backlog), rappels: count(m.rappels), chat: count(m.chat), actions: count(m.actions) })
+      else if (m.type === "theme") { const p = asThemePref(m.value); if (p) setThemePref(p) }
       else if (m.type === "insets") setWebBottom(Number(m.bottom) || 0)
       else if (m.type === "sent" && typeof m.id === "string") AuraDevice.trackRequest(m.id)
+      else if (m.type === "haptic" && typeof m.kind === "string" && m.kind.length <= 16) AuraDevice.haptic?.(m.kind)
+      else if (m.type === "back_state") pwaCanBack.current = m.can === true
+      else if (m.type === "copy_text" && typeof m.text === "string") AuraDevice.copyText?.(m.text)
+      else if (m.type === "share_text" && typeof m.text === "string") AuraDevice.shareText?.(m.text, typeof m.subject === "string" ? m.subject : "")
+      else if (m.type === "clip_read") {
+        const t = AuraDevice.clipText?.() ?? ""
+        ref.current?.injectJavaScript(`window.__auraClip && window.__auraClip(${JSON.stringify(t)}); true`)
+      }
     } catch { /* message d'une autre origine : ignore */ }
-  }, [onOpenPhone, onOpenSettings, onOpenTalk])
+  }, [onOpenDevice, onOpenTalk, onBadges, setThemePref])
 
   // la PWA gere deja la barre systeme si elle voit un inset > 0 ; tant qu'on ne sait pas, on reserve
   const navPad = webBottom === null || webBottom < 1 ? insets.bottom : 0
@@ -235,20 +271,21 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
   }, [])
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: bottomPad }, webBg && !error && { backgroundColor: webBg.hex }]}>
+    <View style={[st.root, { paddingTop: insets.top, paddingBottom: bottomPad, paddingLeft: insets.left, paddingRight: insets.right }]}>
       {error ? (
-        <View style={styles.error}>
-          <Text style={styles.errorTitle}>Aura injoignable</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <Text style={styles.errorText}>Vérifie la connexion réseau (VPN éventuel) du téléphone.</Text>
-          <Button label="Réessayer" onPress={() => { setError(null); setKey((k) => k + 1) }} />
+        <View style={st.error}>
+          <Message kind="error" title="Aura injoignable" text={`${error}\n${errorHint(error)}`}
+            onRetry={() => {
+              setError(null)
+              setKey((k) => k + 1)
+            }} />
         </View>
       ) : (
         <WebView
           key={key}
           ref={ref}
-          source={{ uri: key === 0 ? url : PWA_URL }}
-          style={styles.web}
+          source={{ uri: url }}
+          style={st.web}
           originWhitelist={["*"]}
           javaScriptEnabled
           domStorageEnabled
@@ -258,17 +295,21 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
           mediaCapturePermissionGrantType="grant"
           setSupportMultipleWindows={false}
           startInLoadingState
-          renderLoading={() => <ActivityIndicator style={styles.loading} color={theme.accent} size="large" />}
+          renderLoading={() => <View style={st.loading}><Message kind="loading" text="Chargement d'Aura…" /></View>}
           onShouldStartLoadWithRequest={onShouldStart}
           injectedJavaScript={INJECT}
           onMessage={onMessage}
           onNavigationStateChange={(nav) => { canGoBack.current = nav.canGoBack }}
+          onLoadStart={() => { pwaCanBack.current = false; pwaReady.current = false }}
           onLoadEnd={(e) => {
-            if (isPwaUrl(e.nativeEvent.url) && !e.nativeEvent.loading) {
+            const here = e.nativeEvent.url
+            if (isPwaUrl(here) && !e.nativeEvent.loading) {
               AuraDevice.setPref(PAIRED_KEY, "1")
               if (pendingHash.current) ref.current?.injectJavaScript(`location.hash = ${JSON.stringify(pendingHash.current)}; true`)
               pendingHash.current = null
               ref.current?.injectJavaScript(`window.__auraBadge && window.__auraBadge(${badge}); true`)
+              pwaReady.current = true
+              checkClip()
             }
           }}
           onError={(e) => setError(e.nativeEvent.description || "erreur réseau")}
@@ -276,7 +317,7 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
             const msg = httpErrorMessage(e.nativeEvent.statusCode, e.nativeEvent.url)
             if (msg) setError(msg)
           }}
-          onRenderProcessGone={() => setKey((k) => k + 1)}
+          onRenderProcessGone={() => { pwaCanBack.current = false; setKey((k) => k + 1) }}
           overScrollMode="never"
           textZoom={webTextZoom(fontScale)}
           webviewDebuggingEnabled={__DEV__}
@@ -286,11 +327,9 @@ export default function AuraScreen({ onOpenPhone, onOpenSettings, onOpenTalk, op
   )
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.bg },
-  web: { flex: 1, backgroundColor: theme.bg },
-  loading: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0 },
-  error: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 12 },
-  errorTitle: { color: theme.text, fontSize: 20, fontWeight: "700" },
-  errorText: { color: theme.dim, fontSize: 14, textAlign: "center" },
-})
+const useStyles = makeStyles((t) => ({
+  root: { flex: 1, backgroundColor: t.bg },
+  web: { flex: 1, backgroundColor: t.bg },
+  loading: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: t.bg, justifyContent: "center" },
+  error: { flex: 1, justifyContent: "center" },
+}))
