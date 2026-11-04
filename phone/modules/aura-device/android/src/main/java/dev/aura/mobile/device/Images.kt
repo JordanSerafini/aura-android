@@ -38,8 +38,10 @@ object Images {
   fun fromUri(ctx: Context, uri: Uri, quality: Int = 80): Jpeg? {
     val cr = ctx.contentResolver
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    cr.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
-    if (bounds.outWidth <= 0) return null
+    // 22/10 (lot 11) : en inJustDecodeBounds, decodeStream rend TOUJOURS null ; l'ancien `?: return null` sur son resultat
+    // rendait null pour toute image partagee depuis le 27/09 (vignette vide, « Image illisible »). Seul le flux est teste.
+    val opened = cr.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds); true } ?: false
+    if (!opened || bounds.outWidth <= 0) return null
     var sample = 1
     while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_SIDE) sample *= 2
     val opts = BitmapFactory.Options().apply { inSampleSize = sample }
