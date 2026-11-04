@@ -23,16 +23,24 @@ object Notifs {
   // Live Update (LiveUpdate.kt) : importance DEFAULT sans son ni vibration. Android 16 refuse de
   // promouvoir une notification d'un canal IMPORTANCE_MIN, et LOW la cache de l'ecran verrouille sur One UI.
   const val CH_LIVE = "aura_live"
+  // Live Update du HUD (HudLive.kt) : meme reglage que CH_LIVE mais ecran verrouille en PRIVATE, le nom d'une alerte
+  // grave ou d'un rendez-vous ne s'y affiche pas en clair (seule la version publique, « Aura »).
+  const val CH_HUD_LIVE = "aura_hud_live"
   // Carte d'appel (CallCards.kt) : fiche client a la sonnerie, heads-up sans son ni vibration (le telephone sonne deja)
   const val CH_CALL = "aura_call"
   // Appels manques regroupes (MissedCalls.kt), fin de tache (TaskDone.kt), temps a valider (TimeProposals.kt) : 01/10 soir
   const val CH_MISSED = "aura_missed"
   const val CH_DONE = "aura_done"
   const val CH_TIME = "aura_time"
+  // Fins de tache (`aura-fin` du bridge, 17/10 soir) : canal a part de « Alertes » pour les regler sans toucher aux vraies alertes.
+  // IMPORTANCE_DEFAULT : un son, pas de tete d'ecran. Le canal CH_DONE (heads-up natif de `task_done`) est inchange.
+  const val CH_FIN = "aura_fin"
 
   const val ID_SERVICE = 1001
   const val ID_FIND = 1002
   const val ID_LIVE = 1003
+  // Live Update du HUD (HudLive.kt, 1.9.0) : alerte grave, rendez-vous proche ; a cote de celle du tour de chat
+  const val ID_HUD_LIVE = 1004
   private var nextId = 2000
 
   fun createChannels(ctx: Context) {
@@ -64,6 +72,13 @@ object Notifs {
       setShowBadge(false)
       lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
     })
+    nm.createNotificationChannel(NotificationChannel(CH_HUD_LIVE, "Aura HUD en direct", NotificationManager.IMPORTANCE_DEFAULT).apply {
+      description = "Alerte grave ou rendez-vous proche, sans son ; détail masqué sur l'écran verrouillé"
+      setSound(null, null)
+      enableVibration(false)
+      setShowBadge(false)
+      lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+    })
     nm.createNotificationChannel(NotificationChannel(CH_CALL, "Fiche d'appel", NotificationManager.IMPORTANCE_HIGH).apply {
       description = "Qui t'appelle : la fiche client d'Aura s'affiche pendant que le téléphone sonne"
       setSound(null, null)
@@ -74,8 +89,12 @@ object Notifs {
       description = "Les numéros qui t'ont appelé sans réponse, avec « Rappeler » (ouvre le composeur)"
       enableVibration(true)
     })
-    nm.createNotificationChannel(NotificationChannel(CH_DONE, "Tâches terminées", NotificationManager.IMPORTANCE_HIGH).apply {
-      description = "Aura a fini une tâche longue pendant que tu n'étais pas dans l'app"
+    nm.createNotificationChannel(NotificationChannel(CH_DONE, "Tâche longue finie (direct)", NotificationManager.IMPORTANCE_HIGH).apply {
+      description = "Aura a fini une tâche longue pendant que tu n'étais pas dans l'app (en tête d'écran, avant la notification « Fins de tâche »)"
+    })
+    // 1.4.10 : cree a cote des autres, sans toucher a l'existant (un canal Android ne change plus d'importance une fois cree)
+    nm.createNotificationChannel(NotificationChannel(CH_FIN, "Fins de tâche", NotificationManager.IMPORTANCE_DEFAULT).apply {
+      description = "Une tâche d'Aura est terminée (ou plusieurs, regroupées). Sonne une fois, sans tête d'écran ; la nuit calme (23 h - 7 h) elle se tait"
     })
     nm.createNotificationChannel(NotificationChannel(CH_TIME, "Temps à valider", NotificationManager.IMPORTANCE_DEFAULT).apply {
       description = "Les temps non saisis qu'Aura a chiffrés (17 h), et le résultat de leur saisie"
@@ -117,7 +136,9 @@ object Notifs {
 
   /** Message `notify` du bridge {id, text, category, severity, ts, detail?, mute_key?, thread?, quiet?}
    *  → notification Android. Sévérité ≥ 2 : alerte sonore en tête d'écran ; 1 : silencieuse ;
-   *  `quiet` (« Moins de ça » côté bridge) : rien.
+   *  `quiet` (« Moins de ça » côté bridge) : rien. `silent` (nuit calme, mise à jour d'un lot de fins de tâche) : ni son ni tête
+   *  d'écran, quelle que soit la gravité. `aura-fin` : canal « Fins de tâche ». `replaces` : ids de notifications que celle-ci
+   *  remplace (lot de fins de tâche : les fins déjà affichées une par une sont retirées).
    *  Jusqu'au 28/09 : titre « Aura » seul, sans heure ni bouton, et UNE notif par catégorie (deux
    *  conseils d'agenda : le 2e effaçait le 1er). Désormais une par notif, sauf un incident qui se
    *  répète (`thread`, ex. pression mémoire) qui remplace la précédente ; toutes rangées dans un groupe.
@@ -137,10 +158,12 @@ object Notifs {
     if (BridgeLogic.coveredByCard(category, msg.str("mute_key"))) return
     val nid = msg.optString("id").takeIf { ID_RE.matches(it) }
     val muteKey = msg.optString("mute_key").takeIf { it.isNotEmpty() && it.length <= 200 }
-    val alert = severity >= 2
+    val quietMsg = msg.optBoolean("silent", false)  // 1.4.10 : le bridge pose `silent` (nuit calme, mise a jour d'un lot)
+    val alert = NotifRules.isAlert(severity, quietMsg)
     val first = text.lineSequence().first().take(80)
-    val label = LABELS[category] ?: "Aura"
-    val sev = when { severity >= 3 -> "🔴 "; alert -> "🟠 "; else -> "" }
+    val label = NotifRules.label(category)
+    // une fin de tache emprunte la gravite 3 pour sonner : ce n'est pas une alerte, pas de pastille rouge (17/10 soir, comme la PWA)
+    val sev = when { category == NotifRules.CAT_FIN -> ""; severity >= 3 -> "🔴 "; alert -> "🟠 "; else -> "" }
     val detail = msg.optString("detail").trim()
     val big = if (detail.isNotEmpty() && detail != text) "$text\n\n$detail" else text
     val ts = msg.optDouble("ts", 0.0)
@@ -153,19 +176,25 @@ object Notifs {
       else -> "cat:$category"
     }
     val reqBase = tag.hashCode()
-    val b = NotificationCompat.Builder(ctx, if (alert) CH_ALERT else CH_INFO)
+    // lot de fins de tache : les fins deja affichees une par une cedent la place a la notification de groupe
+    NotifRules.replacedIds(msg, ID_RE).forEach { cancelTagged(ctx, "notif:$it") }
+    val b = NotificationCompat.Builder(ctx, NotifRules.channel(category, alert, CH_FIN, CH_ALERT, CH_INFO))
       .setSmallIcon(R.drawable.ic_aura)
       .setContentTitle("$sev$label")
       .setContentText(first)
       .setSubText(if (msg.has("thread")) "×${msg.optInt("thread")}" else null)
       .setStyle(NotificationCompat.BigTextStyle().bigText(big.take(1500)))
       .setPriority(if (alert) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_LOW)
-      .setCategory(if (alert) NotificationCompat.CATEGORY_ERROR else NotificationCompat.CATEGORY_STATUS)
+      .setCategory(if (alert && category != NotifRules.CAT_FIN) NotificationCompat.CATEGORY_ERROR else NotificationCompat.CATEGORY_STATUS)
       .setGroup(GROUP_BRIDGE)
       .setAutoCancel(true)
       .setContentIntent(deepLink(ctx, reqBase, if (nid != null) "aura://notifs" else null))
     if (ts > 0) b.setWhen((ts * 1000).toLong()).setShowWhen(true)
     if (silent) b.setSilent(true)  // rattrapage d'une notif de plus de 30 min : pas de sonnerie en retard
+    // pas d'alerte (gravite 1, `silent`) : un canal « Fins de tache » ou « Alertes » ne sonne pas pour autant tout seul ;
+    // une mise a jour de lot (meme id) ne re-sonne jamais
+    if (!alert) b.setSilent(true)
+    if (msg.optBoolean("lot_update", false)) b.setOnlyAlertOnce(true)
     if (nid != null) remember(nid)
     if (nid != null && reminder != null) {
       // rappel : Fait / +1 h directement (reminder_act, mis en file hors ligne), puis la liste des rappels
@@ -239,7 +268,7 @@ object Notifs {
   }
 
   /** Notifications arrivees pendant la coupure : non lues, non archivees, 8 au plus, sans son au-dela de 30 min. */
-  fun catchUp(ctx: Context, recent: org.json.JSONArray?) {
+  fun catchUp(ctx: Context, recent: org.json.JSONArray?, nightCalm: Boolean = false) {
     val already = synchronized(shown) { shown.toMutableSet() }
     try {
       // encore affichee (processus redemarre depuis) : pas de doublon
@@ -249,7 +278,7 @@ object Notifs {
       // lecture des notifs actives indisponible : on s'en tient a la memoire
     }
     val r = synchronized(tsLock) {
-      NotifCatchUp.select(recent, lastTs(), already, System.currentTimeMillis() / 1000.0).also {
+      NotifCatchUp.select(recent, lastTs(), already, System.currentTimeMillis() / 1000.0, nightCalm).also {
         Aura.prefs.edit().putString(PREF_LAST_TS, it.lastTs.toString()).apply()
       }
     }
@@ -298,7 +327,6 @@ object Notifs {
   }
 
   fun cancelTagged(ctx: Context, tag: String) = NotificationManagerCompat.from(ctx).cancel(tag, ID_BRIDGE)
-
   /** notif_state / notif_mute vers le bridge ; hors ligne, rien n'est garde (la notif reste « non lue »). */
   fun sendNotifState(id: String, read: Boolean? = null, archived: Boolean? = null) {
     val o = org.json.JSONObject().put("type", "notif_state").put("ids", org.json.JSONArray().put(id))
@@ -312,14 +340,6 @@ private val ID_RE = Regex("^[A-Za-z0-9_-]{1,64}$")
 private const val GROUP_BRIDGE = "dev.aura.mobile.BRIDGE"
 private const val ID_BRIDGE = 0x4000
 private const val ID_BRIDGE_SUMMARY = 0x4001
-// memes libelles que NOTIF_LABELS de la PWA (app.js)
-private val LABELS = mapOf(
-  "media" to "Média", "night" to "Nuit", "aura-agenda" to "Agenda", "aura-sante" to "Santé",
-  "aura-rappel" to "Rappel", "memoire" to "Santé", "aura-conseil" to "Conseil", "aura" to "Aura",
-  "notifications" to "AURA", "aura-appel" to "Appel", "aura-mail" to "Mail",
-  "aura-fin" to "Tâche terminée", "aura-temps" to "Temps",
-)
-
 /** Boutons des notifications : Accepter / Refuser une confirmation, arreter la sonnerie. */
 class ActionReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
@@ -359,6 +379,7 @@ class ActionReceiver : BroadcastReceiver() {
         }
       }
       ACTION_COPY_TEXT -> intent.getStringExtra("text")?.let { TimeProposals.copyToClipboard(context, it) }
+      ACTION_HUD_LIVE_SEEN -> intent.getStringExtra("key")?.let { HudLive.dismiss(context, it) }
       ACTION_LIVE_CANCEL -> intent.getStringExtra("id")?.let {
         Aura.bridge.send(org.json.JSONObject().put("type", "cancel").put("id", it))
       }
@@ -370,6 +391,7 @@ class ActionReceiver : BroadcastReceiver() {
     const val ACTION_CONFIRM_NO = "dev.aura.mobile.CONFIRM_NO"
     const val ACTION_FIND_STOP = "dev.aura.mobile.FIND_STOP"
     const val ACTION_LIVE_CANCEL = "dev.aura.mobile.LIVE_CANCEL"
+    const val ACTION_HUD_LIVE_SEEN = "dev.aura.mobile.HUD_LIVE_SEEN"
     const val ACTION_PAUSE_TOGGLE = "dev.aura.mobile.PAUSE_TOGGLE"
     const val ACTION_LIMIT_CANCEL = "dev.aura.mobile.LIMIT_CANCEL"
     const val ACTION_COPY_TEXT = "dev.aura.mobile.COPY_TEXT"
