@@ -136,8 +136,8 @@ object AppUsage {
     val period = (periodRaw ?: "24h").trim().lowercase()
     if (period !in AppUsageLogic.PERIODS) throw ActionError("bad_params", "period : 24h, today ou 7d")
     if (!granted()) {
-      throw ActionError("permission:usage_access", "Accès à l'utilisation non accordé sur le téléphone : app Aura, onglet " +
-        "Actions → « Accès à l'utilisation » (ou Paramètres → Applications → Accès spécial → Accès aux données d'utilisation → Aura)")
+      throw ActionError("permission:usage_access", "Accès à l'utilisation non accordé sur le téléphone : app Aura, " +
+        "Appareil → Permissions → « Accès à l'utilisation » (ou Paramètres → Applications → Accès spécial → Accès aux données d'utilisation → Aura)")
     }
     val usm = ctx.getSystemService(UsageStatsManager::class.java)
       ?: throw ActionError("unsupported", "Statistiques d'utilisation indisponibles sur ce téléphone")

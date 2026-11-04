@@ -592,7 +592,7 @@ class ActionExecutor {
   private fun locationGet(): JSONObject {
     Perms.require("location", Perms.location())
     if (!Aura.appForeground && !Perms.locationBackground()) {
-      throw ActionError("permission:location_background", "Localisation « Toujours autoriser » requise app fermée (onglet Actions)")
+      throw ActionError("permission:location_background", "Localisation « Toujours autoriser » requise app fermée (Appareil → Permissions)")
     }
     var loc: Location? = null
     try {
