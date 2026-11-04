@@ -262,7 +262,7 @@ class BridgeClient {
         Pause.onConnected()
         Pause.onWelcome(msg)
         flushOutbox()
-        Notifs.catchUp(Aura.app, msg.optJSONArray("recent"))
+        Notifs.catchUp(Aura.app, msg.optJSONArray("recent"), msg.optBoolean("night_calm", false))
         WatchConvs.pushSoon()
         PhoneContext.onWelcome()
         PhoneEvents.onWelcome()
@@ -276,6 +276,8 @@ class BridgeClient {
         // notifications d'appels manques / de temps encore affichees : leur etat a pu changer pendant la coupure (rappele, saisi)
         if (MissedCalls.hasShown()) send(JSONObject().put("type", "missed_list"))
         if (TimeProposals.count() > 0) send(JSONObject().put("type", "time_list"))
+        // widget « Aura HUD » pose (22/10, PROTOCOL.md §33) : abonnement au flux du HUD, rien sans widget
+        AuraHudWidget.onWelcome(Aura.app)
         Aura.emitState()
       }
       "events_wanted" -> EventsWanted.onMessage(msg)
@@ -283,6 +285,7 @@ class BridgeClient {
       "time_proposals" -> TimeProposals.onProposals(msg)
       "time_result" -> TimeProposals.onResult(msg)
       "task_done" -> TaskDone.onBridge(msg)
+      "hud_feed" -> AuraHudWidget.onBridgeFeed(Aura.app, msg)
       "limit_state" -> LimitBanner.onState(msg)
       "limit_cleared" -> LimitBanner.onCleared(msg)
       // progression des tours longs : LiveUpdate.onBridge l'a deja lue en tete de handle ; quota_state : rien a afficher ici
@@ -319,7 +322,9 @@ class BridgeClient {
         if (code == "bad_conv" && msg.str("conv") != null && msg.str("conv") == WatchConvs.selected()) {
           WatchConvs.select(null)  // conversation fermee ailleurs : la montre repart sur la plus recente
         }
-        if (code == "device_only") {
+        if (code == "bad_type" && msg.optString("message").contains("hud_sub")) {
+          Log.i(Aura.TAG, "bridge sans hud_sub (avant le 22/10) : le widget HUD passera par /hud/feed")
+        } else if (code == "device_only") {
           // jeton commun des clients au lieu du jeton appareil : le bridge refuse device_caps
           lastCaps = null
           detail = "Jeton non-appareil : actions refusées par le bridge (réappairer avec le jeton s22-natif)"
@@ -375,8 +380,21 @@ class BridgeClient {
     if (netCallback != null) return
     val cm = Aura.app.getSystemService(ConnectivityManager::class.java) ?: return
     val cb = object : ConnectivityManager.NetworkCallback() {
+      private var current: Network? = null
+
       override fun onAvailable(network: Network) {
+        val changed = NetLogic.changed(current, network)
+        current = network
+        // route changee (Wi-Fi <-> 4G, VPN) : l'ancienne socket est morte meme si le TCP ne le sait pas encore ;
+        // le kick() ci-dessous remet le backoff a zero et rouvre sans attendre l'ancien delai
+        if (changed) recycle("reseau change")
         Aura.timer.schedule(Runnable { kick() }, 1, TimeUnit.SECONDS)
+      }
+
+      override fun onLost(network: Network) {
+        if (current != network) return
+        current = null
+        recycle("reseau perdu")
       }
     }
     try {
@@ -397,3 +415,9 @@ class BridgeClient {
     }
   }
 }
+
+/** Reseau par defaut : une route differente de la precedente rend la socket ouverte suspecte. */
+internal object NetLogic {
+  fun changed(previous: Any?, now: Any): Boolean = previous != null && previous != now
+}
+
