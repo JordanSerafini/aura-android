@@ -111,5 +111,33 @@
       <!-- 300 s (le minimum) : l'etat du telephone vieillit meme sans nouveau DataItem (telephone eteint, hors de portee) -->
       <meta-data android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS" android:value="300" />
     </service>
+
+    <!-- Tuile « Aura HUD » (0.3.0) : le HUD du PC relu dans l'etat du telephone 1.9.0 (PROTOCOL.md §35) -->
+    <service
+      android:name=".tile.AuraHudTileService"
+      android:exported="true"
+      android:icon="@drawable/ic_aura"
+      android:label="@string/hud_tile_label"
+      android:description="@string/hud_tile_description"
+      android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+      <intent-filter>
+        <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+      </intent-filter>
+      <meta-data android:name="androidx.wear.tiles.PREVIEW" android:resource="@drawable/tile_preview" />
+    </service>
+
+    <!-- Complication « Aura HUD » (0.3.0) : nombre d'alertes du PC, heure du prochain rendez-vous -->
+    <service
+      android:name=".complication.AuraHudComplicationService"
+      android:exported="true"
+      android:icon="@drawable/ic_aura"
+      android:label="@string/hud_complication_label"
+      android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+      <intent-filter>
+        <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+      </intent-filter>
+      <meta-data android:name="android.support.wearable.complications.SUPPORTED_TYPES" android:value="SHORT_TEXT" />
+      <meta-data android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS" android:value="300" />
+    </service>
   </application>
 </manifest>

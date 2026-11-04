@@ -4,5 +4,8 @@
   <string name="tile_label">Aura</string>
   <string name="tile_description">Parler à Aura et voir la dernière réponse</string>
   <string name="complication_label">Aura</string>
+  <string name="hud_tile_label">Aura HUD</string>
+  <string name="hud_tile_description">Le HUD du PC : alertes, prochain rendez-vous, à traiter</string>
+  <string name="hud_complication_label">Aura HUD</string>
   <string name="confirm_label">Confirmation Aura</string>
 </resources>

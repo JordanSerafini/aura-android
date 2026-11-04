@@ -29,6 +29,8 @@ object Paths {
   const val STATUS = "/aura/status"
   /** Fiche d'appel (§10) : S22 -> montre `{title, lines, number?, ts}`, affichee en notification (texte seul). */
   const val CALL_CARD = "/aura/call_card"
+  /** Compteurs d'usage (1.4.0) : montre -> S22 `{counters: {tuile: 1}}`, comptés par le S22 sous `montre.<nom>` (PROTOCOL.md §3). */
+  const val USAGE = "/aura/usage"
 
   fun voice(id: String) = VOICE_PREFIX + id
 

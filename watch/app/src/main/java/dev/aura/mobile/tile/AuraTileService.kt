@@ -19,17 +19,21 @@ import dev.aura.mobile.AuraApp
 import dev.aura.mobile.R
 import dev.aura.mobile.data.AuraBus
 import dev.aura.mobile.data.RecordTokenStore
+import dev.aura.mobile.notify.Haptics
 import dev.aura.mobile.protocol.AuraStatus
+import dev.aura.mobile.protocol.LaunchCounters
 import dev.aura.mobile.protocol.Paths
 import dev.aura.mobile.protocol.PauseSet
 import dev.aura.mobile.protocol.Protocol
 import dev.aura.mobile.protocol.StatusLogic
 import dev.aura.mobile.protocol.TileClicks
+import dev.aura.mobile.ui.AuraPalette
 import dev.aura.mobile.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicLong
@@ -50,7 +54,7 @@ class AuraTileService : TileService() {
         val lastHandled = runCatching { app.store.lastTileClick() }.getOrDefault(0L)
         TileClicks.pausePending(requestParams.currentState.lastClickableId, lastHandled)?.let { nonce ->
           runCatching { app.store.saveTileClick(nonce) }  // note AVANT d'agir : un echec ne doit pas reboucler
-          togglePause(app)
+          if (!togglePause(app)) onPauseFailed(app)
         }
         val last = runCatching { app.store.lastReply()?.second }.getOrNull()
         val status = AuraBus.status.value ?: runCatching { app.store.status() }.getOrNull()
@@ -60,14 +64,32 @@ class AuraTileService : TileService() {
       "aura-tile"
     }
 
-  /** Appui sur « Pause » : demande au téléphone (qui l'applique et prévient le bridge) ; la tuile suit seulement si c'est parti. */
-  private suspend fun togglePause(app: AuraApp) {
+  /**
+   * Appui sur « Pause » : demande au téléphone (qui l'applique et prévient le bridge) ; la tuile suit seulement si c'est
+   * parti. Rend false si l'envoi a échoué : aucun état optimiste n'a alors été appliqué (la tuile garde l'état réel).
+   */
+  private suspend fun togglePause(app: AuraApp): Boolean {
     val status = AuraBus.status.value ?: runCatching { app.store.status() }.getOrNull()
     val set: PauseSet = StatusLogic.togglePause(status, System.currentTimeMillis() / 1000)
-    if (!app.phone.send(Paths.PAUSE_SET, Protocol.encode(set))) return
+    if (!app.phone.send(Paths.PAUSE_SET, Protocol.encode(set))) return false
     val next = StatusLogic.applied(status, set)
     AuraBus.status.value = next
     runCatching { app.store.saveStatus(Protocol.json.encodeToString(AuraStatus.serializer(), next)) }
+    return true
+  }
+
+  /**
+   * Pause non envoyée (0.2.0) : vibration longue, « Échec, téléphone injoignable » en tête de tuile quelques secondes
+   * (StatusLogic.PAUSE_FAILED_SHOWN_MS), puis un nouveau rendu remet le bandeau habituel. Avant, rien ne se passait.
+   */
+  private fun onPauseFailed(app: AuraApp) {
+    pauseFailedAt.set(System.currentTimeMillis())
+    AuraBus.phoneReachable.value = false
+    Haptics.vibrate(app, Haptics.LONG)
+    app.scope.launch {
+      delay(StatusLogic.PAUSE_FAILED_SHOWN_MS)
+      runCatching { getUpdater(app).requestUpdate(AuraTileService::class.java) }
+    }
   }
 
   @Deprecated("Requis par l'API Tiles pour fournir les images de la tuile")
@@ -96,8 +118,10 @@ class AuraTileService : TileService() {
   // tous les moteurs de rendu de tuiles : on la garde tant que la montre n'est pas sur un renderer récent.
   @Suppress("DEPRECATION")
   private fun buildTile(lastReply: String?, status: AuraStatus?, phoneReachable: Boolean?, clickNonce: Long): TileBuilders.Tile {
-    val nowS = System.currentTimeMillis() / 1000
-    val model = StatusLogic.tile(status, phoneReachable, nowS)
+    val nowMs = System.currentTimeMillis()
+    val nowS = nowMs / 1000
+    val failedAt = pauseFailedAt.get()
+    val model = StatusLogic.tileAfterPauseFailure(StatusLogic.tile(status, phoneReachable, nowS), failedAt, nowMs)
 
     val launch = ActionBuilders.LaunchAction.Builder()
       .setAndroidActivity(
@@ -110,6 +134,7 @@ class AuraTileService : TileService() {
             MainActivity.EXTRA_RECORD_TOKEN,
             ActionBuilders.AndroidStringExtra.Builder().setValue(RecordTokenStore.gate(this).token()).build(),
           )
+          .addKeyToExtraMapping(LaunchCounters.EXTRA_SOURCE, ActionBuilders.AndroidStringExtra.Builder().setValue(LaunchCounters.TILE).build())
           .build(),
       )
       .build()
@@ -121,6 +146,7 @@ class AuraTileService : TileService() {
           .setPackageName(packageName)
           .setClassName(MainActivity::class.java.name)
           .addKeyToExtraMapping(MainActivity.EXTRA_CONFIRM, ActionBuilders.AndroidBooleanExtra.Builder().setValue(true).build())
+          .addKeyToExtraMapping(LaunchCounters.EXTRA_SOURCE, ActionBuilders.AndroidStringExtra.Builder().setValue(LaunchCounters.TILE).build())
           .build(),
       )
       .build()
@@ -176,7 +202,7 @@ class AuraTileService : TileService() {
           id = "confirm",
           action = openConfirm,
           background = GOOD,
-          foreground = ON_WARN,
+          foreground = ON_STATUS,
           description = if (model.confirms == 1) "1 confirmation en attente" else "${model.confirms} confirmations en attente",
         ),
       )
@@ -210,7 +236,9 @@ class AuraTileService : TileService() {
 
     return TileBuilders.Tile.Builder()
       .setResourcesVersion(RESOURCES_VERSION)
-      .setFreshnessIntervalMillis(freshnessMs(status, nowS))
+      .setFreshnessIntervalMillis(
+        if (StatusLogic.pauseFailedShown(failedAt, nowMs)) FRESH_MIN_MS else freshnessMs(status, nowS),
+      )
       .setTileTimeline(TimelineBuilders.Timeline.fromLayoutElement(root))
       .build()
   }
@@ -275,15 +303,21 @@ class AuraTileService : TileService() {
     private fun nextNonce(): Long = nonce.updateAndGet { maxOf(System.currentTimeMillis(), it + 1) }
     private const val REACH_TIMEOUT_MS = 2_500L
     private const val FRESH_MAX_MS = 5 * 60_000L
-    private const val ACCENT = 0xFF7C4DFF.toInt()
-    private const val ON_ACCENT = 0xFFFFFFFF.toInt()
-    private const val TEXT = 0xFFE6E1E5.toInt()
-    private const val MUTED = 0xFFB9A8FF.toInt()
-    private const val CHIP = 0xFF2B2A33.toInt()
-    private const val WARN = 0xFFFFB74D.toInt()
-    private const val ON_WARN = 0xFF1F1300.toInt()
-    private const val GOOD = 0xFF81C995.toInt()
-    private const val BAD = 0xFFF28B82.toInt()
+    private const val FRESH_MIN_MS = 10_000L
+    /** Heure (ms) du dernier échec d'envoi de « Pause » ; 0 = aucun. */
+    private val pauseFailedAt = AtomicLong(0L)
+
+    // Jetons sombres de l'app (AuraPalette, 0.2.0) : plus de vert ni de rouge propres à la tuile.
+    private const val ACCENT = AuraPalette.ACCENT.toInt()
+    private const val ON_ACCENT = AuraPalette.ON_ACCENT.toInt()
+    private const val TEXT = AuraPalette.TEXT.toInt()
+    private const val MUTED = AuraPalette.MUTED.toInt()
+    private const val CHIP = AuraPalette.LINE.toInt()
+    private const val WARN = AuraPalette.ALERT.toInt()
+    private const val ON_WARN = AuraPalette.ON_ALERT.toInt()
+    private const val GOOD = AuraPalette.OK.toInt()
+    private const val BAD = AuraPalette.DANGER.toInt()
+    private const val ON_STATUS = AuraPalette.ON_STATUS.toInt()
 
     /**
      * Prochain rafraîchissement : 5 min, ou l'échéance de la pause si elle tombe avant (la tuile redevient « normale »
@@ -294,7 +328,7 @@ class AuraTileService : TileService() {
       val until = status?.pause?.until ?: 0L
       if (StatusLogic.pauseMode(status, nowS) != "off" && until > 0L) next = minOf(next, (until - nowS) * 1000 + 1_000)
       StatusLogic.staleInS(status, nowS)?.let { next = minOf(next, it * 1000) }
-      return next.coerceIn(10_000L, FRESH_MAX_MS)
+      return next.coerceIn(FRESH_MIN_MS, FRESH_MAX_MS)
     }
 
     fun truncate(text: String?, max: Int = 80): String? {
