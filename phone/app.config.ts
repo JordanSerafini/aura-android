@@ -18,8 +18,8 @@ assertUrls(bridgeUrl, pwaUrl, process.env)
 // tournait sur le S22. versionName et versionCode s'incrementent a CHAQUE APK publiee (versionCode strictement croissant,
 // sinon Android refuse la mise a jour) ; buildId (date + commit, « -dirty » si l'arbre n'etait pas commite) part dans le
 // hello et dans device_caps.info, lu par le natif dans le manifeste (plugins/withAuraAndroid.js).
-const version = "1.1.0"
-const versionCode = 2
+const version = "1.2.0"
+const versionCode = 3
 
 function git(args: string): string {
   try {
@@ -48,8 +48,13 @@ const config: ExpoConfig = {
   scheme: "aura",
   version,
   orientation: "portrait",
+  // 1.4.0 : thème clair ou sombre comme le système (ou comme la PWA l'impose). Sans « automatic », Expo fige le mode clair
+  // et useColorScheme() ne voit jamais le sombre.
+  userInterfaceStyle: "automatic",
+  // charte du 22/10 (lot 20) : icône = orbe violet -> cyan (sources vectorielles assets/icon/*.svg, rendu
+  // scripts/render-icons.cjs) sur le fond --bg sombre de la charte ; plus de robot bleu sur #101418
   icon: "./assets/icon.png",
-  backgroundColor: "#101418",
+  backgroundColor: "#0e1017",
   platforms: ["android"],
   android: {
     package: "dev.aura.mobile",
@@ -58,7 +63,8 @@ const config: ExpoConfig = {
     allowBackup: false,
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
-      backgroundColor: "#101418",
+      monochromeImage: "./assets/adaptive-icon-monochrome.png",
+      backgroundColor: "#0e1017",
     },
     softwareKeyboardLayoutMode: "resize",
     permissions: [
@@ -102,6 +108,11 @@ const config: ExpoConfig = {
       },
     ],
     "./plugins/withAuraAndroid",
+    // Space Grotesk (OFL 1.1, assets/fonts/space-grotesk-OFL.txt) : la police des titres de la PWA, embarquee au build
+    // (famille = nom du fichier : SpaceGrotesk-Bold). Sous-ensemble Latin, 2 x 42 Ko. Passe de style du 15/10.
+    // Geist Mono Medium (OFL 1.1, assets/fonts/geist-mono-OFL.txt, paquet npm « geist » 1.8.2 de Vercel) : heures,
+    // compteurs, durées, montants, code (charte du 22/10, lot 20)
+    ["expo-font", { fonts: ["./assets/fonts/SpaceGrotesk-Medium.ttf", "./assets/fonts/SpaceGrotesk-Bold.ttf", "./assets/fonts/GeistMono-Medium.ttf"] }],
   ],
   extra: {
     deviceToken,

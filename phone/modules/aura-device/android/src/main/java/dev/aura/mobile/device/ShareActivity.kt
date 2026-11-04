@@ -57,6 +57,7 @@ class ShareActivity : Activity() {
   private var sending = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    NativeUi.sync(this)
     super.onCreate(savedInstanceState)
     Aura.init(this)
     shared = parse(intent)
@@ -103,15 +104,15 @@ class ShareActivity : Activity() {
   private fun build(): View {
     val dp = { v: Float -> NativeUi.dp(this, v) }
     val root = FrameLayout(this).apply {
-      setBackgroundColor(Color.parseColor("#88000000"))
+      setBackgroundColor(NativeUi.SCRIM)
       setOnClickListener { if (!sending) finish() }
     }
     val sheet = NativeUi.column(this, 12f).apply {
-      background = NativeUi.rounded(NativeUi.CARD, dp(22f).toFloat(), NativeUi.BORDER, dp(1f))
+      background = NativeUi.rounded(NativeUi.CARD, dp(AuraTokens.Radius.XL).toFloat(), NativeUi.BORDER, dp(1f))
       setPadding(dp(18f), dp(18f), dp(18f), dp(20f))
       isClickable = true
     }
-    sheet.addView(NativeUi.text(this, 18f, NativeUi.TEXT, true).apply { text = "Envoyer à Aura" })
+    sheet.addView(NativeUi.text(this, NativeUi.LG, NativeUi.TEXT, true).apply { text = "Envoyer à Aura" })
     sheet.addView(preview())
 
     val chips = NativeUi.row(this, 8f)
@@ -129,14 +130,14 @@ class ShareActivity : Activity() {
       setTextColor(NativeUi.TEXT)
       setHintTextColor(NativeUi.DIM)
       hint = "Consigne pour Aura"
-      background = NativeUi.rounded(NativeUi.BG, dp(12f).toFloat(), NativeUi.BORDER, dp(1f))
+      background = NativeUi.rounded(NativeUi.BG, dp(AuraTokens.Radius.MD).toFloat(), NativeUi.BORDER, dp(1f))
       setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
       inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE
       maxLines = 4
     }
     sheet.addView(consigne)
 
-    status = NativeUi.text(this, 14f, NativeUi.DIM).apply { visibility = View.GONE }
+    status = NativeUi.text(this, NativeUi.SM, NativeUi.DIM).apply { visibility = View.GONE }
     sheet.addView(status)
 
     buttons = NativeUi.row(this, 10f)
@@ -158,15 +159,15 @@ class ShareActivity : Activity() {
   private fun preview(): View {
     val dp = { v: Float -> NativeUi.dp(this, v) }
     val box = NativeUi.row(this, 12f).apply {
-      background = NativeUi.rounded(NativeUi.BG, dp(12f).toFloat())
+      background = NativeUi.rounded(NativeUi.BG, dp(AuraTokens.Radius.MD).toFloat())
       setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
     }
     val thumb = ImageView(this).apply {
       scaleType = ImageView.ScaleType.CENTER_CROP
-      background = NativeUi.rounded(NativeUi.CARD, dp(8f).toFloat())
+      background = NativeUi.rounded(NativeUi.CARD, dp(AuraTokens.Radius.SM).toFloat())
       clipToOutline = true
     }
-    val label = NativeUi.text(this, 14f, NativeUi.TEXT).apply { maxLines = 4 }
+    val label = NativeUi.text(this, NativeUi.SM, NativeUi.TEXT).apply { maxLines = 4 }
     val first = shared.images.firstOrNull()
     val pdf = shared.pdfs.firstOrNull()
     when {

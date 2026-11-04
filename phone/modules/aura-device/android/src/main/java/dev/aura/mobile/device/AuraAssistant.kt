@@ -93,28 +93,34 @@ class AssistSession(ctx: Context) : VoiceInteractionSession(ctx), TtsQueue.Liste
   // ─── Vues ───────────────────────────────────────────────────────────────
 
   override fun onCreateContentView(): View {
+    NativeUi.sync(context)
     val c = context
     val dp = { v: Float -> NativeUi.dp(c, v) }
     root = FrameLayout(c).apply {
-      setBackgroundColor(Color.parseColor("#66000000"))
+      setBackgroundColor(NativeUi.SCRIM)
       setOnClickListener { hide() }  // toucher hors de la carte = fermer
     }
     val card = NativeUi.column(c, 10f).apply {
-      background = NativeUi.rounded(NativeUi.CARD, dp(22f).toFloat(), NativeUi.BORDER, dp(1f))
+      background = NativeUi.rounded(NativeUi.CARD, dp(AuraTokens.Radius.XL).toFloat(), NativeUi.BORDER, dp(1f))
       setPadding(dp(18f), dp(16f), dp(18f), dp(18f))
       isClickable = true  // les touches sur la carte ne ferment pas
       elevation = dp(12f).toFloat()
     }
     val head = NativeUi.row(c, 8f)
-    val title = NativeUi.text(c, 15f, NativeUi.ACCENT, true).apply { text = "Aura" }
-    appChip = NativeUi.text(c, 12f, NativeUi.DIM).apply {
-      background = NativeUi.rounded(NativeUi.BG, dp(10f).toFloat())
+    val title = NativeUi.text(c, NativeUi.BASE, NativeUi.ACCENT, true).apply { text = "Aura" }
+    appChip = NativeUi.text(c, NativeUi.XS, NativeUi.DIM).apply {
+      background = NativeUi.rounded(NativeUi.BG, dp(AuraTokens.Radius.MD).toFloat())
       setPadding(dp(8f), dp(3f), dp(8f), dp(3f))
       visibility = View.GONE
+      // charte du 22/10 : à 200 % de police la puce poussait la croix hors de la carte ; une ligne, bornée, « … » au bout
+      maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+      maxWidth = (c.resources.displayMetrics.widthPixels * 0.5f).toInt()
     }
     val spacer = View(c)
-    val close = NativeUi.text(c, 20f, NativeUi.DIM).apply {
+    val close = NativeUi.text(c, NativeUi.LG, NativeUi.DIM).apply {
       text = "✕"
+      gravity = android.view.Gravity.CENTER
+      minWidth = dp(48f); minHeight = dp(48f)  // cible de 48 dp
       setPadding(dp(8f), 0, dp(4f), 0)
       contentDescription = "Fermer"
       setOnClickListener { hide() }
@@ -125,9 +131,9 @@ class AssistSession(ctx: Context) : VoiceInteractionSession(ctx), TtsQueue.Liste
     head.addView(spacer, LinearLayout.LayoutParams(0, 1, 1f))
     head.addView(close)
 
-    status = NativeUi.text(c, 17f, NativeUi.TEXT, true)
-    question = NativeUi.text(c, 15f, NativeUi.DIM).apply { visibility = View.GONE }
-    reply = NativeUi.text(c, 16f, NativeUi.TEXT).apply { setTextIsSelectable(true) }
+    status = NativeUi.text(c, NativeUi.LG, NativeUi.TEXT, true)
+    question = NativeUi.text(c, NativeUi.BASE, NativeUi.DIM).apply { visibility = View.GONE }
+    reply = NativeUi.text(c, NativeUi.BASE, NativeUi.TEXT).apply { setTextIsSelectable(true) }
     replyScroll = ScrollView(c).apply {
       addView(reply)
       visibility = View.GONE
@@ -137,7 +143,7 @@ class AssistSession(ctx: Context) : VoiceInteractionSession(ctx), TtsQueue.Liste
       hint = "Écris ta question…"
       setHintTextColor(NativeUi.DIM)
       setTextColor(NativeUi.TEXT)
-      background = NativeUi.rounded(NativeUi.BG, dp(12f).toFloat(), NativeUi.BORDER, dp(1f))
+      background = NativeUi.rounded(NativeUi.BG, dp(AuraTokens.Radius.MD).toFloat(), NativeUi.BORDER, dp(1f))
       setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
       inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
       imeOptions = EditorInfo.IME_ACTION_SEND
@@ -151,11 +157,15 @@ class AssistSession(ctx: Context) : VoiceInteractionSession(ctx), TtsQueue.Liste
       visibility = View.GONE
     }
 
-    val actions = NativeUi.row(c, 8f)
-    micBtn = NativeUi.button(c, "Parler", "ghost") { listen() }.apply { maxLines = 1 }
-    actions.addView(NativeUi.weight(micBtn))
-    actions.addView(NativeUi.weight(NativeUi.button(c, "Écrire", "ghost") { showKeyboard() }.apply { maxLines = 1 }))
-    actions.addView(NativeUi.weight(NativeUi.button(c, "Ouvrir dans Aura") { openApp() }.apply { maxLines = 1 }, 1.6f))
+    // charte du 22/10 : « Ouvrir dans Aura » était coupé en « Ouvrir dans » (maxLines 1) et faisait un 2e bouton plein à côté
+    // d'« Envoyer » ; il passe en secondaire, sur 2 lignes au plus, et la rangée devient une colonne à 130 % de police et plus
+    val bigText = c.resources.configuration.fontScale >= 1.3f
+    val actions = if (bigText) NativeUi.column(c, 8f) else NativeUi.row(c, 8f)
+    val cell: (View, Float) -> View = { v, w -> if (bigText) v else NativeUi.weight(v, w) }
+    micBtn = NativeUi.button(c, "Parler", "ghost") { listen() }.apply { maxLines = 2 }
+    actions.addView(cell(micBtn, 1f))
+    actions.addView(cell(NativeUi.button(c, "Écrire", "ghost") { showKeyboard() }.apply { maxLines = 2 }, 1f))
+    actions.addView(cell(NativeUi.button(c, "Ouvrir dans Aura", "ghost") { openApp() }.apply { maxLines = 2 }, 1.6f))
 
     card.addView(head)
     card.addView(status)

@@ -150,16 +150,17 @@ class TimeConfirmActivity : Activity() {
   private val refresh: () -> Unit = { main.post { render() } }
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    NativeUi.sync(this)
     super.onCreate(savedInstanceState)
     Aura.init(this)
     if (intent.getBooleanExtra(EXTRA_FROM_ACTION, false)) Usage.count("notif.tout_valider")
     val root = FrameLayout(this).apply {
-      setBackgroundColor(Color.parseColor("#88000000"))
+      setBackgroundColor(NativeUi.SCRIM)
       setOnClickListener { if (!sending) finish() }
     }
     val dp = { v: Float -> NativeUi.dp(this, v) }
     sheet = NativeUi.column(this, 12f).apply {
-      background = NativeUi.rounded(NativeUi.CARD, dp(22f).toFloat(), NativeUi.BORDER, dp(1f))
+      background = NativeUi.rounded(NativeUi.CARD, dp(AuraTokens.Radius.XL).toFloat(), NativeUi.BORDER, dp(1f))
       setPadding(dp(18f), dp(18f), dp(18f), dp(20f))
       isClickable = true
     }
@@ -188,23 +189,23 @@ class TimeConfirmActivity : Activity() {
     shown = TimeProposals.items()
     sheet.removeAllViews()
     if (shown.isEmpty()) {
-      sheet.addView(NativeUi.text(this, 18f, NativeUi.TEXT, true).apply { text = "Temps à valider" })
-      sheet.addView(NativeUi.text(this, 15f, NativeUi.DIM).apply {
+      sheet.addView(NativeUi.text(this, NativeUi.LG, NativeUi.TEXT, true).apply { text = "Temps à valider" })
+      sheet.addView(NativeUi.text(this, NativeUi.BASE, NativeUi.DIM).apply {
         text = if (Aura.bridge.online()) "Rien à valider pour l'instant (ou la liste arrive…)." else "Aura est hors ligne : la liste arrivera à la reconnexion."
       })
       sheet.addView(button("Fermer", "ghost") { finish() })
       return
     }
-    sheet.addView(NativeUi.text(this, 18f, NativeUi.TEXT, true).apply { text = TimeLogic.summary(shown) })
-    sheet.addView(NativeUi.text(this, 14f, NativeUi.DIM).apply {
+    sheet.addView(NativeUi.text(this, NativeUi.LG, NativeUi.TEXT, true).apply { text = TimeLogic.summary(shown) })
+    sheet.addView(NativeUi.text(this, NativeUi.SM, NativeUi.DIM).apply {
       text = "Aura saisira ces temps dans le système de tickets (commentaire interne). Rien n'est envoyé sans ton accord."
     })
     val list = NativeUi.column(this, 10f)
     for (item in shown) {
       val row = NativeUi.column(this, 2f)
-      row.addView(NativeUi.text(this, 15f, NativeUi.TEXT, true).apply { text = "#${item.ticket} · ${item.title.ifEmpty { "(sans titre)" }}" })
-      row.addView(NativeUi.text(this, 14f, NativeUi.TEXT).apply { text = (if (item.client.isNotEmpty()) "${item.client} · " else "") + "${item.minutes} min" })
-      if (item.evidence.isNotEmpty()) row.addView(NativeUi.text(this, 13f, NativeUi.DIM).apply { text = item.evidence })
+      row.addView(NativeUi.text(this, NativeUi.BASE, NativeUi.TEXT, true).apply { text = "#${item.ticket} · ${item.title.ifEmpty { "(sans titre)" }}" })
+      row.addView(NativeUi.text(this, NativeUi.SM, NativeUi.TEXT).apply { text = (if (item.client.isNotEmpty()) "${item.client} · " else "") + "${item.minutes} min" })
+      if (item.evidence.isNotEmpty()) row.addView(NativeUi.text(this, NativeUi.SM, NativeUi.DIM).apply { text = item.evidence })
       list.addView(row)
     }
     val scroll = ScrollView(this).apply { addView(list) }
@@ -213,8 +214,8 @@ class TimeConfirmActivity : Activity() {
     list.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
     val maxH = (resources.displayMetrics.heightPixels * 0.5f).toInt()
     sheet.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, minOf(list.measuredHeight, maxH)))
-    sheet.addView(NativeUi.text(this, 15f, NativeUi.TEXT, true).apply { text = "Total : ${TimeLogic.total(shown)} min" })
-    if (error != null) sheet.addView(NativeUi.text(this, 14f, NativeUi.BAD).apply { text = error })
+    sheet.addView(NativeUi.text(this, NativeUi.BASE, NativeUi.TEXT, true).apply { text = "Total : ${TimeLogic.total(shown)} min" })
+    if (error != null) sheet.addView(NativeUi.text(this, NativeUi.SM, NativeUi.BAD).apply { text = error })
     val buttons = NativeUi.row(this, 10f)
     buttons.addView(NativeUi.weight(button("Annuler", "ghost") { Usage.count("time.annule"); finish() }))
     buttons.addView(NativeUi.weight(button(if (shown.size == 1) "Valider ce temps" else "Valider ${shown.size} temps") { confirm() }))
